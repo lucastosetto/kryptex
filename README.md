@@ -175,6 +175,34 @@ Each signal includes:
 - **Recommended SL/TP**: Dynamic percentages based on confidence
 - **Reasons**: List of contributing factors with weights
 
+## Validation
+
+Run the automated Phase 1 scenarios (strong/borderline/neutral/MACD-only/extremes) with:
+
+```bash
+cargo test --test signal_scenarios
+```
+
+Each test asserts direction, confidence range, SL/TP scaling, and reason weights for the target market condition.
+
+For manual spot checks or new inputs, use the CLI runner:
+
+```bash
+cargo run -- \
+  --symbol BTC \
+  --macd 60.0 \
+  --signal 20.0 \
+  --histogram 25.0 \
+  --rsi 22.0 \
+  --funding-rate -0.0005 \
+  --price 45000.0
+```
+
+Interpretation tips:
+- Confidence is expressed as 0.0–1.0; multiply by 100 for percent.
+- SL decreases and TP increases as confidence rises; neutral outputs keep defaults and mark SL/TP as N/A.
+- The `Reasons` list enumerates MACD/RSI/Histogram/Funding contributions so you can verify which indicators drove the call.
+
 ### Persistence
 
 Signals are automatically stored in `kryptex_signals.db`:
