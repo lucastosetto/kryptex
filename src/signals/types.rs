@@ -11,7 +11,7 @@ pub struct MacdSignal {
 pub struct IndicatorInput {
     pub macd: MacdSignal,
     pub rsi: f64,
-    pub funding_rate: f64,
+    pub funding_rate: Option<f64>,
     pub price: f64,
     pub symbol: Option<String>,
 }

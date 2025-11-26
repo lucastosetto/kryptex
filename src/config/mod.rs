@@ -8,6 +8,8 @@ pub struct Config {
     pub rsi_oversold: f64,
     pub min_confidence: f64,
     pub default_symbol: String,
+    pub macd_scale: f64,
+    pub hist_scale: f64,
 }
 
 impl Default for Config {
@@ -19,6 +21,8 @@ impl Default for Config {
             rsi_oversold: 30.0,
             min_confidence: 0.5,
             default_symbol: "BTC".to_string(),
+            macd_scale: 50.0,
+            hist_scale: 25.0,
         }
     }
 }
@@ -31,6 +35,8 @@ impl Config {
         rsi_oversold: f64,
         min_confidence: f64,
         default_symbol: String,
+        macd_scale: f64,
+        hist_scale: f64,
     ) -> Self {
         Self {
             default_sl_pct,
@@ -39,6 +45,8 @@ impl Config {
             rsi_oversold,
             min_confidence,
             default_symbol,
+            macd_scale,
+            hist_scale,
         }
     }
 
