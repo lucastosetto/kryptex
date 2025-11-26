@@ -2,6 +2,29 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Candle {
+    pub open: f64,
+    pub high: f64,
+    pub low: f64,
+    pub close: f64,
+    pub volume: f64,
+    pub timestamp: DateTime<Utc>,
+}
+
+impl Candle {
+    pub fn new(open: f64, high: f64, low: f64, close: f64, volume: f64, timestamp: DateTime<Utc>) -> Self {
+        Self {
+            open,
+            high,
+            low,
+            close,
+            volume,
+            timestamp,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MacdIndicator {
     pub macd: f64,
     pub signal: f64,
@@ -39,6 +62,47 @@ pub struct VolumeIndicator {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BollingerBandsIndicator {
+    pub upper: f64,
+    pub middle: f64,
+    pub lower: f64,
+    pub period: u32,
+    pub std_dev: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AtrIndicator {
+    pub value: f64,
+    pub period: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdxIndicator {
+    pub value: f64,
+    pub plus_di: f64,
+    pub minus_di: f64,
+    pub period: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuperTrendIndicator {
+    pub value: f64,
+    pub trend: i32,
+    pub upper_band: f64,
+    pub lower_band: f64,
+    pub period: u32,
+    pub multiplier: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SupportResistanceIndicator {
+    pub support_level: Option<f64>,
+    pub resistance_level: Option<f64>,
+    pub support_distance_pct: Option<f64>,
+    pub resistance_distance_pct: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndicatorSet {
     pub symbol: String,
     pub price: f64,
@@ -54,6 +118,16 @@ pub struct IndicatorSet {
     pub smas: Vec<SmaIndicator>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub volume: Option<VolumeIndicator>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bollinger_bands: Option<BollingerBandsIndicator>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub atr: Option<AtrIndicator>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adx: Option<AdxIndicator>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supertrend: Option<SuperTrendIndicator>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub support_resistance: Option<SupportResistanceIndicator>,
     pub timestamp: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeframe: Option<String>,
@@ -70,6 +144,11 @@ impl IndicatorSet {
             emas: Vec::new(),
             smas: Vec::new(),
             volume: None,
+            bollinger_bands: None,
+            atr: None,
+            adx: None,
+            supertrend: None,
+            support_resistance: None,
             timestamp: Utc::now(),
             timeframe: None,
         }

@@ -35,7 +35,7 @@ impl SignalDatabase {
         let direction_str = match signal.direction {
             SignalDirection::Long => "Long",
             SignalDirection::Short => "Short",
-            SignalDirection::None => "None",
+            SignalDirection::Neutral => "Neutral",
         };
 
         let reasons_json = serde_json::to_string(&signal.reasons)
@@ -69,7 +69,7 @@ impl SignalDatabase {
             let direction = match direction_str.as_str() {
                 "Long" => SignalDirection::Long,
                 "Short" => SignalDirection::Short,
-                _ => SignalDirection::None,
+                _ => SignalDirection::Neutral,
             };
 
             let reasons_json: String = row.get(7)?;
@@ -111,7 +111,7 @@ impl SignalDatabase {
             let direction = match direction_str.as_str() {
                 "Long" => SignalDirection::Long,
                 "Short" => SignalDirection::Short,
-                _ => SignalDirection::None,
+                _ => SignalDirection::Neutral,
             };
 
             let reasons_json: String = row.get(7)?;

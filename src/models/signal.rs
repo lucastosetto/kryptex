@@ -6,7 +6,7 @@ use crate::models::indicators::IndicatorSet;
 pub enum SignalDirection {
     Long,
     Short,
-    None,
+    Neutral,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
