@@ -20,27 +20,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|i| i.parse().ok())
         .unwrap_or(0);
 
-    let symbols: Vec<String> = env::var("SYMBOLS")
+    let symbols: Option<Vec<String>> = env::var("SYMBOLS")
         .ok()
-        .map(|s| s.split(',').map(|s| s.trim().to_string()).collect())
-        .unwrap_or_else(|| vec!["BTC".to_string()]);
+        .map(|s| {
+            let v: Vec<String> = s.split(',').map(|s| s.trim().to_string()).collect();
+            if v.is_empty() {
+                None
+            } else {
+                Some(v)
+            }
+        })
+        .flatten();
 
     println!("Starting Perptrix Signal Engine Server");
     println!("  HTTP Server: http://0.0.0.0:{}", port);
+    
     if eval_interval > 0 {
+        let symbols = symbols.ok_or("SYMBOLS environment variable is required when EVAL_INTERVAL_SECONDS > 0")?;
         println!("  Signal Evaluation: every {} seconds", eval_interval);
         println!("  Symbols: {}", symbols.join(", "));
-    } else {
-        println!("  Signal Evaluation: disabled (set EVAL_INTERVAL_SECONDS to enable)");
-    }
+        
+        let server_handle = tokio::spawn(async move {
+            if let Err(e) = start_server(port).await {
+                eprintln!("HTTP server error: {}", e);
+            }
+        });
 
-    let server_handle = tokio::spawn(async move {
-        if let Err(e) = start_server(port).await {
-            eprintln!("HTTP server error: {}", e);
-        }
-    });
-
-    if eval_interval > 0 {
         let runtime_config = RuntimeConfig {
             evaluation_interval_seconds: eval_interval,
             symbols,
@@ -65,6 +70,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     } else {
+        println!("  Signal Evaluation: disabled (set EVAL_INTERVAL_SECONDS to enable)");
+        
+        let server_handle = tokio::spawn(async move {
+            if let Err(e) = start_server(port).await {
+                eprintln!("HTTP server error: {}", e);
+            }
+        });
+
         tokio::select! {
             _ = signal::ctrl_c() => {
                 println!("\nShutting down...");

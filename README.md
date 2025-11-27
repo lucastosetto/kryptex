@@ -82,7 +82,7 @@ Perptrix implements a signal engine based on the [RFC](https://github.com/lucast
 │ Hyperliquid WS  │─────┐
 └───────────┬─────┘     │ Future adapters
             │           │
-            ▼           │
+            ▼
     ┌───────────────┐
     │ Market Data   │
     │   Pipeline    │
@@ -107,10 +107,12 @@ Perptrix implements a signal engine based on the [RFC](https://github.com/lucast
 ## Project Structure
 
 ```
-src/
-  common/               # Shared helpers (math utilities: EMA, SMA, std dev)
-  config/               # Configuration management
-  core/                 # Cloud runtime (HTTP server, periodic task runner)
+perptrix/
+  config.example.json   # Example configuration file with category weights
+  src/
+    common/               # Shared helpers (math utilities: EMA, SMA, std dev)
+    config/               # Configuration management (JSON-based config)
+    core/                 # Cloud runtime (HTTP server, periodic task runner)
     ├── http.rs         # HTTP endpoints (health check)
     └── runtime.rs      # Periodic signal evaluation
   db/                   # Persistence adapters (SQLite)
@@ -168,7 +170,11 @@ The server will:
 **Environment Variables:**
 - `PORT` - HTTP server port (default: 8080)
 - `EVAL_INTERVAL_SECONDS` - Signal evaluation interval in seconds (default: 0 = disabled)
-- `SYMBOLS` - Comma-separated list of symbols to evaluate (default: "BTC")
+- `SYMBOLS` - Comma-separated list of symbols to evaluate (required when `EVAL_INTERVAL_SECONDS > 0`)
+
+**Configuration File:**
+- Create a `config.json` file in the working directory to customize category weights and other settings (see `config.example.json` for a template)
+- The configuration is automatically loaded if the file exists
 
 **Examples:**
 
@@ -179,8 +185,8 @@ cargo run --bin server
 # Custom port
 PORT=3000 cargo run --bin server
 
-# HTTP server + periodic evaluation every 60 seconds
-EVAL_INTERVAL_SECONDS=60 cargo run --bin server
+# HTTP server + periodic evaluation every 60 seconds (SYMBOLS required)
+EVAL_INTERVAL_SECONDS=60 SYMBOLS=BTC cargo run --bin server
 
 # Full configuration
 PORT=8080 EVAL_INTERVAL_SECONDS=30 SYMBOLS=BTC,ETH cargo run --bin server
@@ -349,12 +355,32 @@ Add exchange-provided fixture datasets + performance benchmarks before promoting
 
 ### Category Weights
 
-The aggregator uses integer scoring (-3 to +3 per category). The registry defines percentage weights:
+Category weights are configurable via a JSON configuration file. The default weights are:
 - **Momentum**: 25% (MACD, RSI)
 - **Trend**: 30% (EMA, SuperTrend)
 - **Volatility**: 15% (Bollinger Bands, ATR)
 - **Volume**: 15% (OBV, Volume Profile)
 - **Perp**: 15% (Funding Rate, Open Interest)
+
+**Note:** The aggregator currently uses integer scoring (-3 to +3 per category) rather than applying these percentage weights directly. The weights are stored in the configuration for future use and documentation purposes.
+
+#### Configuring Weights
+
+Create a `config.json` file (or use `config.example.json` as a template) with your desired category weights:
+
+```json
+{
+  "category_weights": {
+    "momentum": 0.25,
+    "trend": 0.30,
+    "volatility": 0.15,
+    "volume": 0.15,
+    "perp": 0.15
+  }
+}
+```
+
+Weights should sum to 1.0 (100%). The configuration file is automatically loaded when present in the working directory.
 
 ### Direction Thresholds
 - **Long**: Global score > 60% (implemented via `DirectionThresholds::LONG_THRESHOLD`)

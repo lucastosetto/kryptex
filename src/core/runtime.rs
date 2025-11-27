@@ -10,15 +10,6 @@ pub struct RuntimeConfig {
     pub symbols: Vec<String>,
 }
 
-impl Default for RuntimeConfig {
-    fn default() -> Self {
-        Self {
-            evaluation_interval_seconds: 60,
-            symbols: vec!["BTC".to_string()],
-        }
-    }
-}
-
 pub struct SignalRuntime {
     config: RuntimeConfig,
     data_provider: Arc<dyn MarketDataProvider + Send + Sync>,

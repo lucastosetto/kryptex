@@ -1,5 +1,7 @@
 //! Indicator registry and trait system
 
+use crate::config::CategoryWeights;
+
 /// Indicator category
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IndicatorCategory {
@@ -20,17 +22,31 @@ pub trait Indicator {
 }
 
 /// Indicator registry for organizing indicators by category
-pub struct IndicatorRegistry;
+pub struct IndicatorRegistry {
+    weights: CategoryWeights,
+}
 
 impl IndicatorRegistry {
+    /// Create a new registry with default weights
+    pub fn new() -> Self {
+        Self {
+            weights: CategoryWeights::default(),
+        }
+    }
+
+    /// Create a new registry with custom weights
+    pub fn with_weights(weights: CategoryWeights) -> Self {
+        Self { weights }
+    }
+
     /// Get category weight (as percentage)
-    pub fn category_weight(category: IndicatorCategory) -> f64 {
+    pub fn category_weight(&self, category: IndicatorCategory) -> f64 {
         match category {
-            IndicatorCategory::Momentum => 0.25,
-            IndicatorCategory::Trend => 0.30,
-            IndicatorCategory::Volatility => 0.15,
-            IndicatorCategory::Volume => 0.15,
-            IndicatorCategory::Perp => 0.15,
+            IndicatorCategory::Momentum => self.weights.momentum,
+            IndicatorCategory::Trend => self.weights.trend,
+            IndicatorCategory::Volatility => self.weights.volatility,
+            IndicatorCategory::Volume => self.weights.volume,
+            IndicatorCategory::Perp => self.weights.perp,
         }
     }
 
@@ -43,5 +59,11 @@ impl IndicatorRegistry {
             IndicatorCategory::Volume,
             IndicatorCategory::Perp,
         ]
+    }
+}
+
+impl Default for IndicatorRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -1,15 +1,64 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategoryWeights {
+    #[serde(default = "CategoryWeights::default_momentum")]
+    pub momentum: f64,
+    #[serde(default = "CategoryWeights::default_trend")]
+    pub trend: f64,
+    #[serde(default = "CategoryWeights::default_volatility")]
+    pub volatility: f64,
+    #[serde(default = "CategoryWeights::default_volume")]
+    pub volume: f64,
+    #[serde(default = "CategoryWeights::default_perp")]
+    pub perp: f64,
+}
+
+impl CategoryWeights {
+    fn default_momentum() -> f64 {
+        0.25
+    }
+
+    fn default_trend() -> f64 {
+        0.30
+    }
+
+    fn default_volatility() -> f64 {
+        0.15
+    }
+
+    fn default_volume() -> f64 {
+        0.15
+    }
+
+    fn default_perp() -> f64 {
+        0.15
+    }
+}
+
+impl Default for CategoryWeights {
+    fn default() -> Self {
+        Self {
+            momentum: 0.25,
+            trend: 0.30,
+            volatility: 0.15,
+            volume: 0.15,
+            perp: 0.15,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub default_sl_pct: f64,
     pub default_tp_pct: f64,
     pub rsi_overbought: f64,
     pub rsi_oversold: f64,
     pub min_confidence: f64,
-    pub default_symbol: String,
     pub macd_scale: f64,
     pub hist_scale: f64,
+    #[serde(default)]
+    pub category_weights: CategoryWeights,
 }
 
 impl Default for Config {
@@ -20,9 +69,9 @@ impl Default for Config {
             rsi_overbought: 70.0,
             rsi_oversold: 30.0,
             min_confidence: 0.5,
-            default_symbol: "BTC".to_string(),
             macd_scale: 50.0,
             hist_scale: 25.0,
+            category_weights: CategoryWeights::default(),
         }
     }
 }
@@ -34,7 +83,6 @@ impl Config {
         rsi_overbought: f64,
         rsi_oversold: f64,
         min_confidence: f64,
-        default_symbol: String,
         macd_scale: f64,
         hist_scale: f64,
     ) -> Self {
@@ -44,9 +92,9 @@ impl Config {
             rsi_overbought,
             rsi_oversold,
             min_confidence,
-            default_symbol,
             macd_scale,
             hist_scale,
+            category_weights: CategoryWeights::default(),
         }
     }
 

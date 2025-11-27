@@ -1,0 +1,17 @@
+{
+  "default_sl_pct": 0.02,
+  "default_tp_pct": 0.04,
+  "rsi_overbought": 70.0,
+  "rsi_oversold": 30.0,
+  "min_confidence": 0.5,
+  "macd_scale": 50.0,
+  "hist_scale": 25.0,
+  "category_weights": {
+    "momentum": 0.25,
+    "trend": 0.30,
+    "volatility": 0.15,
+    "volume": 0.15,
+    "perp": 0.15
+  }
+}
+
