@@ -231,65 +231,103 @@ if let Some(signal) = SignalEngine::evaluate(&candles, "BTC") {
 }
 ```
 
-### Individual Indicators
+### Indicator System
 
-The signal engine uses stateful indicators that update incrementally. For standalone calculations, use the indicator structs directly:
+The signal engine uses 10 indicators organized into 5 categories. Each indicator produces signals that are scored and aggregated to generate the final trading signal.
 
-```rust
-use perptrix::indicators::momentum::{rsi, macd};
-use perptrix::indicators::trend::ema;
-use perptrix::indicators::volatility::atr;
+#### Momentum Indicators (25% weight)
 
-// RSI
-let mut rsi = rsi::RSI::new(14);
-for candle in &candles {
-    if let Some(rsi_value) = rsi.update(candle.close) {
-        // Use rsi_value
-    }
-}
+**RSI (Relative Strength Index) - 14 period**
+- Measures overbought/oversold conditions
+- Detects bullish/bearish divergences
+- Signals: Oversold (+1), Overbought (-1), Divergences (±2)
 
-// MACD
-let mut macd = macd::MACD::new(12, 26, 9);
-for candle in &candles {
-    let (macd_line, signal_line, histogram, signal) = macd.update(candle.close);
-    // Use values
-}
+**MACD (Moving Average Convergence Divergence) - 12/26/9**
+- Tracks momentum changes via EMA crossovers
+- Identifies trend reversals and momentum shifts
+- Signals: Bullish/Bearish Cross (±2), Momentum (±1)
 
-// EMA
-let mut ema_cross = ema::EMACrossover::new(20, 50);
-for candle in &candles {
-    let signal = ema_cross.update(candle.close);
-    // Use signal
-}
+#### Trend Indicators (30% weight)
 
-// ATR
-let mut atr = atr::ATR::new(14);
-for candle in &candles {
-    let atr_value = atr.update(candle.high, candle.low, candle.close);
-    // Use atr_value
-}
-```
+**EMA Crossover - 20/50 periods**
+- Identifies trend direction and strength
+- Detects golden cross (bullish) and death cross (bearish)
+- Signals: Bullish/Bearish Cross (±2), Strong Trend (±1)
 
-### Cloud Runtime
+**SuperTrend - 10 period, 3.0 multiplier**
+- Dynamic trailing stop indicator
+- Identifies trend flips and continuation
+- Signals: Bullish/Bearish Flip (±2), Trend Continuation (±1)
 
-Start the HTTP server and periodic task runner:
+#### Volatility Indicators (15% weight)
 
-```rust
-use perptrix::core::{start_server, SignalRuntime, RuntimeConfig};
+**Bollinger Bands - 20 SMA, 2σ**
+- Measures volatility and price extremes
+- Detects breakouts, squeezes, and mean reversion
+- Signals: Upper/Lower Breakout (±1), Squeeze/Mean Reversion (informational)
 
-// Start HTTP server (health check at /health)
-tokio::spawn(async {
-    start_server(8080).await.unwrap();
-});
+**ATR (Average True Range) - 14 period**
+- Measures market volatility
+- Classifies volatility regime (Low/Normal/Elevated/High)
+- Used for SL/TP calculation and risk assessment
 
-// Start periodic signal evaluation
-let config = RuntimeConfig {
-    evaluation_interval_seconds: 60,
-    symbols: vec!["BTC".to_string(), "ETH".to_string()],
-};
-let runtime = SignalRuntime::new(config);
-runtime.run().await?;
-```
+#### Volume Indicators (15% weight)
+
+**OBV (On-Balance Volume)**
+- Confirms price movements with volume
+- Detects volume divergences
+- Signals: Bullish/Bearish Divergence (±2), Confirmation (+1)
+
+**Volume Profile**
+- Identifies high/low volume nodes (POC)
+- Detects support/resistance levels based on volume
+- Signals: POC Support (+1), POC Resistance (-1), Near LVN (informational)
+
+#### Perp Indicators (15% weight)
+
+**Open Interest**
+- Tracks new money entering/leaving the market
+- Identifies squeeze conditions
+- Signals: Bullish/Bearish Expansion (±2), Squeeze Conditions (±1)
+
+**Funding Rate - 24-hour rolling average**
+- Measures perpetual swap funding bias
+- Detects extreme positioning
+- Signals: Extreme Bias (inverse: -1 for long bias, +1 for short bias)
+
+### Signal Aggregation
+
+Indicators are combined using a category-based scoring system:
+
+1. **Category Scoring**: Each category receives an integer score from -3 to +3 (or -2 to +2 for volatility/volume/perp):
+   - Positive scores indicate bullish signals
+   - Negative scores indicate bearish signals
+   - Zero indicates neutral
+
+2. **Total Score**: All category scores are summed to produce a total score
+
+3. **Market Bias**: The total score determines market bias:
+   - ≥ 7: Strong Bullish
+   - ≥ 3: Bullish
+   - -3 to 3: Neutral
+   - ≤ -3: Bearish
+   - ≤ -7: Strong Bearish
+
+4. **Position**: Market bias maps to trading position:
+   - Strong Bullish / Bullish → Long
+   - Neutral → Neutral
+   - Bearish / Strong Bearish → Short
+
+5. **Confidence**: Calculated based on:
+   - Alignment of category signals (more alignment = higher confidence)
+   - Trend and momentum alignment bonus (+20% if aligned)
+   - Misalignment penalty (-20% if not aligned)
+
+6. **Risk Assessment**: Considers:
+   - Volatility regime (high volatility increases risk)
+   - Extreme funding rates (increases risk)
+   - Weak total score (increases risk)
+   - RSI divergences (decreases risk)
 
 ## Testing
 
@@ -306,20 +344,6 @@ What the suite currently covers:
 - **Core components**: HTTP server, runtime, market data provider interface (`tests/core/**` and `tests/services/**`)
 
 Add exchange-provided fixture datasets + performance benchmarks before promoting to 24/7 cloud execution.
-
-### Persistence
-
-Signals are automatically stored in `perptrix_signals.db`:
-
-```rust
-use perptrix::db::SignalDatabase;
-
-let db = SignalDatabase::new("perptrix_signals.db")?;
-db.store_signal(&signal)?;
-
-let all_signals = db.get_all_signals()?;
-let btc_signals = db.get_signals_by_symbol("BTC")?;
-```
 
 ## Signal Engine Configuration
 
