@@ -2,7 +2,7 @@
 
 A modular crypto perpetuals signal generation and execution engine built in Rust.
 
-## Overview
+## 📖 Overview
 
 Perptrix is designed to:
 1. Receive market data from exchanges (initially Hyperliquid)
@@ -11,7 +11,7 @@ Perptrix is designed to:
 4. Execute Long/Short orders in perpetual futures
 5. Maintain modularity to allow changing exchanges without altering core logic
 
-## Current Status
+## 📊 Current Status
 
 Perptrix implements a signal engine based on the [RFC](https://github.com/lucastosetto/perptrix/wiki/1.-RFC-%E2%80%90-Perptrix:-Crypto-Perps-Signal-&-Execution-Engine), with a complete indicator set that includes RFC Phase 2 indicators plus additional categories. The core signal evaluation pipeline (indicator computation, aggregation, decisioning, SL/TP logic) is functional, while runtime integration (live data, HTTP signal APIs, metrics, exchange execution) is still pending.
 
@@ -49,7 +49,7 @@ Perptrix implements a signal engine based on the [RFC](https://github.com/lucast
 - Execution engine (order placement, trade management)
 - Dashboard & backtester
 
-## RFC Alignment
+## 📋 RFC Alignment
 
 | RFC Item | Status | Notes |
 | --- | --- | --- |
@@ -75,7 +75,7 @@ Perptrix implements a signal engine based on the [RFC](https://github.com/lucast
 | Execution engine | ❌ | Not started |
 | Dashboard & backtester | ❌ | Not started |
 
-## Architecture
+## 🏗️ Architecture
 
 ```
 ┌─────────────────┐
@@ -104,15 +104,15 @@ Perptrix implements a signal engine based on the [RFC](https://github.com/lucast
           Unified DB
 ```
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 perptrix/
   config.example.json   # Example configuration file with category weights
   src/
-    common/               # Shared helpers (math utilities: EMA, SMA, std dev)
-    config/               # Configuration management (JSON-based config)
-    core/                 # Cloud runtime (HTTP server, periodic task runner)
+    common/             # Shared helpers (math utilities: EMA, SMA, std dev)
+    config/             # Configuration management (JSON-based config)
+    core/               # Cloud runtime (HTTP server, periodic task runner)
     ├── http.rs         # HTTP endpoints (health check)
     └── runtime.rs      # Periodic signal evaluation
   db/                   # Persistence adapters (SQLite)
@@ -122,7 +122,7 @@ perptrix/
     └── signal.rs       # Trading signal types and market bias
   indicators/           # Indicator implementations organized by category
     ├── momentum/       # MACD, RSI
-    ├── trend/          # EMA, SuperTrend (ADX missing)
+    ├── trend/          # EMA, SuperTrend
     ├── volatility/     # Bollinger Bands, ATR
     ├── volume/         # OBV, Volume Profile (beyond RFC Phase 2)
     ├── perp/           # Funding Rate, Open Interest (beyond RFC Phase 2)
@@ -136,7 +136,7 @@ perptrix/
   lib.rs                # Crate root exposing layered modules
 ```
 
-## Installation
+## 🔧 Installation
 
 ### Prerequisites
 
@@ -155,17 +155,15 @@ cargo build
 cargo test
 ```
 
+## 🚀 Usage
+
 ### Running the Server
 
-Start the server with default settings:
+Start the server using:
 
 ```bash
 cargo run --bin server
 ```
-
-The server will:
-- Start HTTP server on port 8080 (configurable via `PORT` env var)
-- Optionally run periodic signal evaluation (disabled by default)
 
 **Environment Variables:**
 - `PORT` - HTTP server port (default: 8080)
@@ -174,18 +172,15 @@ The server will:
 
 **Configuration File:**
 - Create a `config.json` file in the working directory to customize category weights and other settings (see `config.example.json` for a template)
-- The configuration is automatically loaded if the file exists
+- The configuration file is automatically loaded when the server starts
 
 **Examples:**
 
 ```bash
-# Just HTTP server on default port
-cargo run --bin server
-
 # Custom port
 PORT=3000 cargo run --bin server
 
-# HTTP server + periodic evaluation every 60 seconds (SYMBOLS required)
+# Enable periodic signal evaluation
 EVAL_INTERVAL_SECONDS=60 SYMBOLS=BTC cargo run --bin server
 
 # Full configuration
@@ -211,31 +206,7 @@ Response:
 
 **Note:** When periodic evaluation is enabled, it will use the placeholder data provider (returns empty data) until a real market data provider is implemented. Signals will only be generated when actual candle data is available.
 
-## Usage
-
-### Signal Evaluation
-
-Evaluate signals from candle data:
-
-```rust
-use perptrix::signals::engine::SignalEngine;
-use perptrix::models::indicators::Candle;
-use chrono::Utc;
-
-// Create candle data
-let candles = vec![
-    Candle::new(100.0, 101.0, 99.0, 100.5, 1000.0, Utc::now()),
-    // ... more candles
-];
-
-// Evaluate signal
-if let Some(signal) = SignalEngine::evaluate(&candles, "BTC") {
-    println!("Direction: {:?}", signal.direction);
-    println!("Confidence: {:.2}%", signal.confidence * 100.0);
-    println!("SL: {:.2}%", signal.recommended_sl_pct);
-    println!("TP: {:.2}%", signal.recommended_tp_pct);
-}
-```
+## ⚡ Signal Engine
 
 ### Indicator System
 
@@ -335,7 +306,7 @@ Indicators are combined using a category-based scoring system:
    - Weak total score (increases risk)
    - RSI divergences (decreases risk)
 
-## Testing
+## 🧪 Testing
 
 Run all tests:
 
@@ -343,15 +314,7 @@ Run all tests:
 cargo test
 ```
 
-What the suite currently covers:
-- **Indicators**: Unit tests for MACD, RSI, EMA, Bollinger Bands, ATR, SuperTrend, OBV, Volume Profile, Funding Rate, Open Interest (see `tests/indicators/**`)
-- **Signal scenarios**: Integration tests exercising strong up/down trends, ranging markets, high volatility, and major reversals using deterministic synthetic candles (`tests/signal_scenarios.rs`)
-- **Signal pipeline**: Aggregation, decision thresholds, and SL/TP calculations (`tests/signals/**` and `tests/engine/aggregator.rs`)
-- **Core components**: HTTP server, runtime, market data provider interface (`tests/core/**` and `tests/services/**`)
-
-Add exchange-provided fixture datasets + performance benchmarks before promoting to 24/7 cloud execution.
-
-## Signal Engine Configuration
+## ⚙️ Signal Engine Configuration
 
 ### Category Weights
 
@@ -380,12 +343,14 @@ Create a `config.json` file (or use `config.example.json` as a template) with yo
 }
 ```
 
-Weights should sum to 1.0 (100%). The configuration file is automatically loaded when present in the working directory.
+Weights should sum to 1.0 (100%).
 
 ### Direction Thresholds
-- **Long**: Global score > 60% (implemented via `DirectionThresholds::LONG_THRESHOLD`)
-- **Short**: Global score < 40% (implemented via `DirectionThresholds::SHORT_THRESHOLD`)
-- **Neutral**: Global score 40-60%
+
+The signal engine uses integer scores to determine market bias, which maps to trading positions:
+- **Long**: Total score ≥ 3 (Bullish or Strong Bullish bias)
+- **Short**: Total score ≤ -3 (Bearish or Strong Bearish bias)
+- **Neutral**: Total score between -3 and 3
 
 ### SL/TP Calculation
 - **Stop Loss**: ATR × 1.2 (as percentage of price)
@@ -405,7 +370,7 @@ Weights should sum to 1.0 (100%). The configuration file is automatically loaded
 - **Funding Rate**: 24-hour rolling average
 - **Open Interest**: Change-based signals
 
-## Implementation Roadmap
+## 🗺️ Implementation Roadmap
 
 ### ✅ Phase 1 — POC (Completed)
 - Receive external indicators
@@ -445,28 +410,13 @@ Weights should sum to 1.0 (100%). The configuration file is automatically loaded
 - Backtesting engine with historical candles
 - Signal performance visualization
 
-## Dependencies
 
-- `serde` / `serde_json` - Serialization
-- `rusqlite` - SQLite database
-- `chrono` - Timestamps
-- `axum` - HTTP framework for cloud runtime
-- `tokio` - Async runtime
-- `tower` / `tower-http` - Middleware (CORS, logging)
-
-## Design Principles
-
-- **Modularity**: Exchange adapters can be swapped without changing core logic
-- **Precision**: Uses `f64` for all numeric values
-- **Extensibility**: Clear separation between signal generation and execution
-- **Self-documenting**: Minimal comments, code should be clear
-
-## License
+## 📄 License
 
 This project is released under the MIT License. See [LICENSE.md](LICENSE.md)
 for the full text and terms.
 
-## Contributing
+## 🤝 Contributing
 
 Contributions are welcome! Please read
 [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and quality checklist
