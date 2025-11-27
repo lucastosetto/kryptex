@@ -80,10 +80,6 @@ pub enum VolatilityRegime {
     Low,
 }
 
-// ---------------------------------------------------------------------------
-// Legacy helpers - kept until the new engine fully lands.
-// ---------------------------------------------------------------------------
-
 pub fn calculate_atr(candles: &[Candle], period: u32) -> Option<AtrIndicator> {
     if candles.len() < period as usize {
         return None;

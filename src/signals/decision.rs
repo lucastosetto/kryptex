@@ -2,7 +2,6 @@
 
 use crate::models::signal::SignalDirection;
 
-/// Direction thresholds as defined in the RFC
 pub struct DirectionThresholds;
 
 impl DirectionThresholds {
@@ -26,13 +25,10 @@ impl DirectionThresholds {
     }
 }
 
-/// SL/TP calculation logic
 pub struct StopLossTakeProfit;
 
 impl StopLossTakeProfit {
-    /// Calculate SL and TP from ATR
-    /// SL = ATR * 1.2
-    /// TP = ATR * 2.0
+    /// Calculate SL and TP from ATR (SL = ATR * 1.2, TP = ATR * 2.0)
     pub fn calculate_from_atr(atr: f64, price: f64) -> (f64, f64) {
         let sl_pct = (atr * 1.2 / price) * 100.0;
         let tp_pct = (atr * 2.0 / price) * 100.0;

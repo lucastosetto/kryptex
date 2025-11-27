@@ -17,7 +17,6 @@ const VOLUME_PROFILE_LOOKBACK: usize = 240;
 const VOLUME_PROFILE_TICK: f64 = 10.0;
 const MIN_CANDLES: usize = 50;
 
-/// Main signal evaluation engine
 pub struct SignalEngine;
 
 impl SignalEngine {

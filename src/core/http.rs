@@ -7,13 +7,11 @@ use tokio::sync::RwLock;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 
-/// Application state
 #[derive(Clone)]
 pub struct AppState {
     pub health: Arc<RwLock<HealthStatus>>,
 }
 
-/// Health status
 #[derive(Clone, Debug)]
 pub struct HealthStatus {
     pub status: String,
@@ -29,7 +27,6 @@ impl Default for HealthStatus {
     }
 }
 
-/// Health check endpoint
 pub async fn health_check(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> {
     let health = state.health.read().await;
     Ok(Json(json!({
@@ -39,7 +36,6 @@ pub async fn health_check(State(state): State<AppState>) -> Result<Json<Value>, 
     })))
 }
 
-/// Create HTTP router
 pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -47,7 +43,6 @@ pub fn create_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-/// Start HTTP server
 pub async fn start_server(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let state = AppState {
         health: Arc::new(RwLock::new(HealthStatus::default())),

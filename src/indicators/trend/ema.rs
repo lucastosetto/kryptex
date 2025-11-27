@@ -115,11 +115,6 @@ impl EMACrossover {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Legacy helpers (kept for compatibility with the existing signal engine)
-// ---------------------------------------------------------------------------
-
-/// Calculate EMA for a specific period using the historical window.
 pub fn calculate_ema(candles: &[Candle], period: u32) -> Option<EmaIndicator> {
     if candles.len() < period as usize {
         return None;

@@ -63,10 +63,6 @@ impl MACD {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Legacy helpers - kept for candle-based consumers.
-// ---------------------------------------------------------------------------
-
 pub fn calculate_macd(
     candles: &[Candle],
     fast_period: u32,

@@ -109,10 +109,6 @@ impl RSI {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Legacy helpers - kept for the existing candle-based signal engine.
-// ---------------------------------------------------------------------------
-
 pub fn calculate_rsi(candles: &[Candle], period: u32) -> Option<RsiIndicator> {
     if candles.len() < period as usize {
         return None;

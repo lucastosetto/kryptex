@@ -79,10 +79,6 @@ impl BollingerBands {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Legacy helpers - for candle-based consumers.
-// ---------------------------------------------------------------------------
-
 pub fn calculate_bollinger_bands(
     candles: &[Candle],
     period: u32,

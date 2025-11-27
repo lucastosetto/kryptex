@@ -10,19 +10,16 @@ use tokio::signal;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Get port from environment or use default
     let port = env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(8080);
 
-    // Get evaluation interval from environment or use default (0 = disabled)
     let eval_interval: u64 = env::var("EVAL_INTERVAL_SECONDS")
         .ok()
         .and_then(|i| i.parse().ok())
         .unwrap_or(0);
 
-    // Get symbols from environment or use default
     let symbols: Vec<String> = env::var("SYMBOLS")
         .ok()
         .map(|s| s.split(',').map(|s| s.trim().to_string()).collect())
@@ -37,14 +34,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Signal Evaluation: disabled (set EVAL_INTERVAL_SECONDS to enable)");
     }
 
-    // Start HTTP server in a background task
     let server_handle = tokio::spawn(async move {
         if let Err(e) = start_server(port).await {
             eprintln!("HTTP server error: {}", e);
         }
     });
 
-    // Optionally start periodic signal evaluation
     if eval_interval > 0 {
         let runtime_config = RuntimeConfig {
             evaluation_interval_seconds: eval_interval,
@@ -58,7 +53,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
 
-        // Wait for shutdown signal
         tokio::select! {
             _ = signal::ctrl_c() => {
                 println!("\nShutting down...");
@@ -71,7 +65,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     } else {
-        // Just wait for shutdown signal if no runtime
         tokio::select! {
             _ = signal::ctrl_c() => {
                 println!("\nShutting down...");

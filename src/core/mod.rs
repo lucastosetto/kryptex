@@ -2,9 +2,7 @@
 
 pub mod http;
 pub mod runtime;
-pub mod bootstrap {
-    //! Entry points and high-level initialization hooks.
-}
+pub mod bootstrap {}
 
 pub use http::*;
 pub use runtime::*;

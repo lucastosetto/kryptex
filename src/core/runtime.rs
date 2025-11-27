@@ -5,7 +5,6 @@ use crate::signals::engine::SignalEngine;
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
 
-/// Runtime configuration
 pub struct RuntimeConfig {
     pub evaluation_interval_seconds: u64,
     pub symbols: Vec<String>,
@@ -20,14 +19,12 @@ impl Default for RuntimeConfig {
     }
 }
 
-/// Signal engine runtime
 pub struct SignalRuntime {
     config: RuntimeConfig,
     data_provider: Arc<dyn MarketDataProvider + Send + Sync>,
 }
 
 impl SignalRuntime {
-    /// Create new runtime
     pub fn new(config: RuntimeConfig) -> Self {
         Self {
             config,
@@ -35,7 +32,6 @@ impl SignalRuntime {
         }
     }
 
-    /// Create runtime with custom data provider
     pub fn with_provider<P: MarketDataProvider + Send + Sync + 'static>(
         config: RuntimeConfig,
         provider: P,
@@ -46,7 +42,6 @@ impl SignalRuntime {
         }
     }
 
-    /// Run periodic signal evaluation
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut interval_timer =
             interval(Duration::from_secs(self.config.evaluation_interval_seconds));
@@ -85,14 +80,12 @@ impl SignalRuntime {
         &self,
         symbol: &str,
     ) -> Result<Option<crate::models::signal::SignalOutput>, Box<dyn std::error::Error>> {
-        // Get candles from data provider
         let candles = self.data_provider.get_candles(symbol, 250)?;
 
         if candles.is_empty() {
             return Ok(None);
         }
 
-        // Evaluate signal
         let signal = SignalEngine::evaluate(&candles, symbol);
         Ok(signal)
     }
