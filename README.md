@@ -13,38 +13,67 @@ Perptrix is designed to:
 
 ## Current Status
 
-Perptrix now ships the full Phase 2 signal engine defined in the [RFC](https://github.com/lucastosetto/perptrix/wiki/1.-RFC-%E2%80%90-Perptrix:-Crypto-Perps-Signal-&-Execution-Engine), plus scaffolding for the Phase 3 cloud runtime. Indicator computation, aggregation, decisioning, and SL/TP logic are implemented, while runtime integration (live data, HTTP signal APIs, metrics, exchange execution) is still pending.
+Perptrix implements a signal engine based on the [RFC](https://github.com/lucastosetto/perptrix/wiki/1.-RFC-%E2%80%90-Perptrix:-Crypto-Perps-Signal-&-Execution-Engine), with a complete indicator set that includes RFC Phase 2 indicators plus additional categories. The core signal evaluation pipeline (indicator computation, aggregation, decisioning, SL/TP logic) is functional, while runtime integration (live data, HTTP signal APIs, metrics, exchange execution) is still pending.
 
 ### Implemented
 
-- Multi-category indicator stack: MACD, RSI, 12/26 + 50/200 EMAs, ADX, Bollinger Bands, ATR, SuperTrend, Support/Resistance (`src/indicators/**`).
-- Normalization, category-based weighting, aggregation, and explainability (`src/signals/scoring.rs`, `src/signals/aggregation.rs`, `src/signals/categories.rs`).
-- Direction thresholds and ATR-driven SL/TP logic (`src/signals/decision.rs`).
-- SQLite persistence layer ready for storing evaluated signals (`src/db/sqlite.rs`).
-- Unit + integration tests covering indicators and multiple market regimes (`tests/**`).
+**Indicator Categories:**
+- **Momentum**: MACD (12/26/9), RSI (14)
+- **Trend**: EMA (20/50 cross), SuperTrend (10, 3.0)
+- **Volatility**: Bollinger Bands (20 SMA, 2σ), ATR (14)
+- **Volume**: OBV, Volume Profile (POC-based support/resistance)
+- **Perp**: Funding Rate, Open Interest
+
+**Core Engine:**
+- Signal aggregation with category-based scoring (`src/engine/aggregator.rs`)
+- Direction thresholds and ATR-driven SL/TP logic (`src/signals/decision.rs`)
+- Signal evaluation orchestrator (`src/signals/engine.rs`)
+- SQLite persistence layer (`src/db/sqlite.rs`)
+- Unit + integration tests covering indicators and multiple market regimes (`tests/**`)
+
+**Cloud Runtime (Partial):**
+- HTTP server with health check endpoint (`/health`)
+- Periodic signal evaluation runtime (requires real market data provider)
+- Placeholder market data provider interface
 
 ### Missing / In Progress
 
-- Live market data ingestion: `SignalRuntime` currently uses `PlaceholderMarketDataProvider`, so periodic jobs cannot emit real signals.
-- HTTP API for retrieving the latest signal/indicator breakdown (server currently exposes only `/health`).
-- Structured logging/metrics suitable for cloud monitoring (only `println!` statements exist today).
-- Exchange adapters, funding-rate ingestion, execution engine, dashboard/backtester (future RFC phases).
+**Phase 3 Requirements:**
+- Live market data ingestion: `SignalRuntime` currently uses `PlaceholderMarketDataProvider`
+- HTTP API for retrieving latest signal/indicator breakdown (server only has `/health`)
+- Structured logging/metrics suitable for cloud monitoring (only `println!` statements)
+- Exchange adapters (Hyperliquid WebSocket, funding rate fetching)
+- OHLC reconstruction from real-time data
+
+**Future Phases:**
+- Execution engine (order placement, trade management)
+- Dashboard & backtester
 
 ## RFC Alignment
 
 | RFC Item | Status | Notes |
 | --- | --- | --- |
-| Indicator categories (Momentum, Trend, Volatility, Market Structure) | ✅ | Implemented in `src/indicators/` with dedicated modules per category. |
-| Normalization + helper utilities | ✅ | `src/signals/scoring.rs` provides shared normalization + confidence helpers. |
-| Category weighting + aggregation | ✅ | `Aggregator` + `CategoryWeights` mirror the RFC weights. |
-| Direction thresholds + SL/TP logic | ✅ | `signals::decision` matches the >60% / <40% thresholds and ATR × (1.2/2.0) rules. |
-| Explainability (per-indicator contributions) | ✅ | `Aggregator::generate_reasons` returns category + indicator reasons. |
-| Persistence | ✅ | `SignalDatabase` (SQLite) schema + helpers are ready but not wired into runtime yet. |
-| Cloud runtime | ⚠️ Partial | `SignalRuntime` + Axum server exist, but server only has `/health` and runtime has no real data source. |
-| HTTP signal endpoint | ❌ | Needs endpoint(s) to fetch latest signal, indicator set, and stored history. |
-| Market data ingestion (Hyperliquid adapter, funding data) | ❌ | Only `PlaceholderMarketDataProvider` is present; no exchange adapters yet. |
-| Logging + metrics | ❌ | No structured logging, telemetry, or Prometheus-style metrics are implemented. |
-| Execution engine + downstream phases | ❌ | Order/execution/risk management modules have not been started. |
+| **Indicators** | | |
+| Momentum: MACD, RSI | ✅ | Fully implemented (12/26/9, 14) |
+| Trend: EMA cross, SuperTrend | ✅ | EMA 20/50 cross, SuperTrend (10, 3.0) |
+| Volatility: Bollinger Bands, ATR | ✅ | Fully implemented (20 SMA, 2σ; 14 period) |
+| Volume: OBV, Volume Profile | ✅ | Implemented (beyond RFC Phase 2) |
+| Perp: Funding Rate, Open Interest | ✅ | Implemented (beyond RFC Phase 2) |
+| **Signal Engine** | | |
+| Category-based aggregation | ✅ | Integer scoring system (-3 to +3 per category) |
+| Direction thresholds (>60% Long, <40% Short) | ✅ | Implemented in `signals::decision` |
+| SL/TP logic (ATR × 1.2/2.0) | ✅ | Correctly implemented |
+| Explainability (per-indicator contributions) | ✅ | `Aggregator` returns reasons for each signal |
+| **Infrastructure** | | |
+| Persistence (SQLite) | ✅ | Schema and helpers ready but not wired into runtime |
+| Cloud runtime | ⚠️ Partial | `SignalRuntime` + Axum server exist; server only has `/health` |
+| **Phase 3 - Runtime** | | |
+| HTTP signal endpoint | ❌ | Needs endpoint(s) to fetch latest signal, indicator set, history |
+| Market data ingestion | ❌ | Only `PlaceholderMarketDataProvider`; no exchange adapters |
+| Logging + metrics | ❌ | No structured logging or metrics |
+| **Future Phases** | | |
+| Execution engine | ❌ | Not started |
+| Dashboard & backtester | ❌ | Not started |
 
 ## Architecture
 
@@ -52,23 +81,23 @@ Perptrix now ships the full Phase 2 signal engine defined in the [RFC](https://g
 ┌─────────────────┐
 │ Hyperliquid WS  │─────┐
 └───────────┬─────┘     │ Future adapters
-            │            │
-            ▼            │
+            │           │
+            ▼           │
     ┌───────────────┐
-    │ Market Data    │
-    │   Pipeline     │
-    └───────┬────────┘
+    │ Market Data   │
+    │   Pipeline    │
+    └───────┬───────┘
             │ Candles / Indicators (POC)
             ▼
-   ┌─────────────────┐
+   ┌──────────────────┐
    │ Indicator Engine │
-   └────────┬────────┘
+   └────────┬─────────┘
             │ Signals
             ▼
-  ┌────────────────────────┐
+  ┌─────────────────────────┐
   │ Signal Interpreter      │
   │ + SL/TP Recommendations │
-  └──────────┬─────────────┘
+  └──────────┬──────────────┘
              ▼
       (Future) Trade Executor
              ▼
@@ -86,18 +115,19 @@ src/
     └── runtime.rs      # Periodic signal evaluation
   db/                   # Persistence adapters (SQLite)
   evaluation/           # Signal scoring and validation utilities
+  engine/               # Signal aggregation and scoring
+    ├── aggregator.rs   # Category-based signal aggregation (integer scoring)
+    └── signal.rs       # Trading signal types and market bias
   indicators/           # Indicator implementations organized by category
     ├── momentum/       # MACD, RSI
-    ├── trend/          # EMA, ADX
+    ├── trend/          # EMA, SuperTrend (ADX missing)
     ├── volatility/     # Bollinger Bands, ATR
-    ├── structure/      # SuperTrend, Support/Resistance
+    ├── volume/         # OBV, Volume Profile (beyond RFC Phase 2)
+    ├── perp/           # Funding Rate, Open Interest (beyond RFC Phase 2)
     └── registry.rs     # Indicator registry and category system
   models/               # Shared DTOs (Candle, IndicatorSet, SignalOutput)
   services/             # Market data provider interface
   signals/              # Signal evaluation engine
-    ├── aggregation.rs  # Category-based aggregation
-    ├── categories.rs   # Category weights
-    ├── scoring.rs      # Score normalization
     ├── decision.rs     # Direction thresholds and SL/TP logic
     └── engine.rs       # Main signal evaluation orchestrator
   strategies/           # Strategy definitions (placeholder)
@@ -203,24 +233,41 @@ if let Some(signal) = SignalEngine::evaluate(&candles, "BTC") {
 
 ### Individual Indicators
 
-Calculate specific indicators:
+The signal engine uses stateful indicators that update incrementally. For standalone calculations, use the indicator structs directly:
 
 ```rust
-use perptrix::indicators::momentum::{calculate_rsi_default, calculate_macd_default};
-use perptrix::indicators::trend::calculate_ema;
-use perptrix::indicators::volatility::calculate_atr_default;
+use perptrix::indicators::momentum::{rsi, macd};
+use perptrix::indicators::trend::ema;
+use perptrix::indicators::volatility::atr;
 
 // RSI
-let rsi = calculate_rsi_default(&candles);
+let mut rsi = rsi::RSI::new(14);
+for candle in &candles {
+    if let Some(rsi_value) = rsi.update(candle.close) {
+        // Use rsi_value
+    }
+}
 
 // MACD
-let macd = calculate_macd_default(&candles);
+let mut macd = macd::MACD::new(12, 26, 9);
+for candle in &candles {
+    let (macd_line, signal_line, histogram, signal) = macd.update(candle.close);
+    // Use values
+}
 
 // EMA
-let ema_12 = calculate_ema(&candles, 12);
+let mut ema_cross = ema::EMACrossover::new(20, 50);
+for candle in &candles {
+    let signal = ema_cross.update(candle.close);
+    // Use signal
+}
 
 // ATR
-let atr = calculate_atr_default(&candles);
+let mut atr = atr::ATR::new(14);
+for candle in &candles {
+    let atr_value = atr.update(candle.high, candle.low, candle.close);
+    // Use atr_value
+}
 ```
 
 ### Cloud Runtime
@@ -253,9 +300,10 @@ cargo test
 ```
 
 What the suite currently covers:
-- **Indicators & helpers**: Unit tests for MACD, RSI, EMA, ADX, Bollinger Bands, ATR, SuperTrend, Support/Resistance, math helpers, parsers, and validation logic (see `tests/indicators/**` and `tests/unit/**`).
-- **Signal scenarios**: Integration tests exercising strong up/down trends, ranging markets, high volatility, and major reversals using deterministic synthetic candles (`tests/signal_scenarios.rs`).
-- **Signal pipeline**: Aggregation, category weights, decision thresholds, and SL/TP calculations (`tests/signals/**`).
+- **Indicators**: Unit tests for MACD, RSI, EMA, Bollinger Bands, ATR, SuperTrend, OBV, Volume Profile, Funding Rate, Open Interest (see `tests/indicators/**`)
+- **Signal scenarios**: Integration tests exercising strong up/down trends, ranging markets, high volatility, and major reversals using deterministic synthetic candles (`tests/signal_scenarios.rs`)
+- **Signal pipeline**: Aggregation, decision thresholds, and SL/TP calculations (`tests/signals/**` and `tests/engine/aggregator.rs`)
+- **Core components**: HTTP server, runtime, market data provider interface (`tests/core/**` and `tests/services/**`)
 
 Add exchange-provided fixture datasets + performance benchmarks before promoting to 24/7 cloud execution.
 
@@ -275,15 +323,18 @@ let btc_signals = db.get_signals_by_symbol("BTC")?;
 
 ## Signal Engine Configuration
 
-### Category Weights (RFC-defined)
+### Category Weights
+
+The aggregator uses integer scoring (-3 to +3 per category). The registry defines percentage weights:
 - **Momentum**: 25% (MACD, RSI)
-- **Trend**: 35% (EMA crosses, ADX)
-- **Volatility**: 20% (Bollinger Bands, ATR)
-- **Market Structure**: 20% (SuperTrend, Support/Resistance)
+- **Trend**: 30% (EMA, SuperTrend)
+- **Volatility**: 15% (Bollinger Bands, ATR)
+- **Volume**: 15% (OBV, Volume Profile)
+- **Perp**: 15% (Funding Rate, Open Interest)
 
 ### Direction Thresholds
-- **Long**: Global score > 60%
-- **Short**: Global score < 40%
+- **Long**: Global score > 60% (implemented via `DirectionThresholds::LONG_THRESHOLD`)
+- **Short**: Global score < 40% (implemented via `DirectionThresholds::SHORT_THRESHOLD`)
 - **Neutral**: Global score 40-60%
 
 ### SL/TP Calculation
@@ -292,13 +343,17 @@ let btc_signals = db.get_signals_by_symbol("BTC")?;
 - Only calculated for Long/Short signals (not Neutral)
 
 ### Indicator Parameters
+
 - **MACD**: 12/26 EMA, 9 signal period
 - **RSI**: 14 period
-- **EMA**: 12, 26, 50, 200 periods
-- **ADX**: 14 period
+- **EMA**: 20/50 cross
+- **SuperTrend**: 10 period, 3.0 multiplier
 - **Bollinger Bands**: 20 SMA, 2 standard deviations
 - **ATR**: 14 period
-- **SuperTrend**: 10 period, 3.0 multiplier
+- **OBV**: On-Balance Volume
+- **Volume Profile**: POC-based support/resistance detection
+- **Funding Rate**: 24-hour rolling average
+- **Open Interest**: Change-based signals
 
 ## Implementation Roadmap
 
@@ -309,13 +364,14 @@ let btc_signals = db.get_signals_by_symbol("BTC")?;
 
 ### ✅ Phase 2 — Signal Engine (Completed)
 - **Momentum Indicators**: MACD (12/26/9), RSI (14)
-- **Trend Indicators**: EMA (12, 26, 50, 200), ADX (14)
+- **Trend Indicators**: EMA (20/50 cross), SuperTrend (10, 3)
 - **Volatility Indicators**: Bollinger Bands (20 SMA, 2σ), ATR (14)
-- **Market Structure**: SuperTrend (10, 3), Support/Resistance
-- Category-based aggregation with RFC-defined weights
+- **Volume Indicators**: OBV, Volume Profile
+- **Perp Indicators**: Funding Rate, Open Interest
+- Category-based aggregation with integer scoring
 - Signal decision engine (Long/Short/Neutral thresholds)
 - SL/TP calculation from ATR
-- Cloud runtime with HTTP health check
+- Cloud runtime with HTTP health check (partial)
 
 ### 🔜 Phase 3 — Exchange Adapter
 - WebSocket market data integration
