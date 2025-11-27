@@ -9,7 +9,7 @@ use perptrix::services::hyperliquid::HyperliquidMarketDataProvider;
 use perptrix::services::market_data::MarketDataProvider;
 use std::env;
 use tokio::signal;
-use tokio::time::{sleep, Duration};
+use tokio::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -60,28 +60,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Initializing Hyperliquid WebSocket provider...");
         let provider = HyperliquidMarketDataProvider::new();
         
-        // Wait a moment for connection to establish
+        // Wait for connection to establish (with timeout)
         println!("  Waiting for WebSocket connection...");
-        sleep(Duration::from_secs(2)).await;
+        let client = provider.client().clone();
+        if client.wait_for_connection(Duration::from_secs(10)).await {
+            println!("  ✓ WebSocket connected");
+        } else {
+            eprintln!("  ⚠ Warning: WebSocket connection timeout, subscriptions will be queued");
+        }
         
-        // Subscribe to symbols with retry
+        // Subscribe to symbols (will queue if not connected yet)
         for symbol in &symbols {
-            let mut retries = 3;
-            while retries > 0 {
-                match provider.subscribe(symbol).await {
-                    Ok(()) => {
-                        println!("  ✓ Subscribed to {}", symbol);
-                        break;
-                    }
-                    Err(e) => {
-                        retries -= 1;
-                        if retries > 0 {
-                            eprintln!("  Warning: Failed to subscribe to {}: {}. Retrying...", symbol, e);
-                            sleep(Duration::from_secs(1)).await;
-                        } else {
-                            eprintln!("  ✗ Error: Failed to subscribe to {} after retries: {}", symbol, e);
-                        }
-                    }
+            match provider.subscribe(symbol).await {
+                Ok(()) => {
+                    println!("  ✓ Subscribed to {} (or queued if not connected)", symbol);
+                }
+                Err(e) => {
+                    eprintln!("  ✗ Error: Failed to subscribe to {}: {}", symbol, e);
                 }
             }
         }

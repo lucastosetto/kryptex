@@ -5,5 +5,6 @@ pub mod messages;
 pub mod provider;
 pub mod subscriptions;
 
+pub use client::HyperliquidClient;
 pub use provider::HyperliquidMarketDataProvider;
 

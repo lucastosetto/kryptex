@@ -54,6 +54,8 @@ impl Subscription {
 pub struct SubscriptionResponse {
     pub channel: String,
     pub data: SubscriptionResponseData,
+    #[serde(default, rename = "isSnapshot")]
+    pub is_snapshot: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -73,14 +75,22 @@ pub enum WebSocketMessage {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CandleData {
+    #[serde(rename = "channel")]
     pub channel: String,
-    pub data: Vec<CandleUpdate>,
+    #[serde(rename = "data")]
+    pub data: CandleUpdate,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CandleUpdate {
+    #[serde(rename = "t")]
+    pub start_time: u64,
     #[serde(rename = "T")]
-    pub timestamp: u64,
+    pub end_time: u64,
+    #[serde(rename = "s")]
+    pub coin: String,
+    #[serde(rename = "i")]
+    pub interval: String,
     #[serde(rename = "o")]
     pub open: String,
     #[serde(rename = "h")]
@@ -91,10 +101,8 @@ pub struct CandleUpdate {
     pub close: String,
     #[serde(rename = "v")]
     pub volume: String,
-    #[serde(rename = "coin", skip_serializing_if = "Option::is_none")]
-    pub coin: Option<String>,
-    #[serde(rename = "interval", skip_serializing_if = "Option::is_none")]
-    pub interval: Option<String>,
+    #[serde(rename = "n", default)]
+    pub trades: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

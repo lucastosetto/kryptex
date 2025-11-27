@@ -47,7 +47,12 @@ impl HyperliquidClient {
         loop {
             match self.try_connect().await {
                 Ok(()) => {
-                    println!("Hyperliquid WebSocket connected");
+                    // Only print once per connection, not on every reconnect
+                    if current_delay == self.reconnect_delay {
+                        println!("Hyperliquid WebSocket connected");
+                    } else {
+                        println!("Hyperliquid WebSocket reconnected");
+                    }
                     current_delay = self.reconnect_delay;
                     
                     // Spawn ping task to keep connection alive
@@ -192,6 +197,21 @@ impl HyperliquidClient {
 
     pub async fn send_text(&self, text: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.send(Message::Text(text)).await
+    }
+
+    pub async fn is_connected(&self) -> bool {
+        self.sender.read().await.is_some()
+    }
+
+    pub async fn wait_for_connection(&self, timeout: Duration) -> bool {
+        let start = std::time::Instant::now();
+        while start.elapsed() < timeout {
+            if self.is_connected().await {
+                return true;
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+        false
     }
 }
 

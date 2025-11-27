@@ -15,7 +15,7 @@ use crate::signals::decision::StopLossTakeProfit;
 const ATR_LOOKBACK: usize = 14;
 const VOLUME_PROFILE_LOOKBACK: usize = 240;
 const VOLUME_PROFILE_TICK: f64 = 10.0;
-const MIN_CANDLES: usize = 50;
+pub const MIN_CANDLES: usize = 50;
 
 pub struct SignalEngine;
 
@@ -142,6 +142,23 @@ impl SignalEngine {
             description: format!("Risk level: {:?}", trading_signal.risk_level),
             weight: 0.5,
         });
+
+        // Debug: Log score even if neutral
+        let normalized_score = crate::signals::decision::DirectionThresholds::to_percentage(
+            trading_signal.score_breakdown.total_score as f64 / 12.0
+        );
+        if direction == crate::models::signal::SignalDirection::Neutral {
+            eprintln!("  [DEBUG] {}: Neutral signal - Score: {:.2} (needs >0.51 for Long, <0.49 for Short). Breakdown: T={}, M={}, V={}, Vol={}, P={}, Total={}", 
+                symbol,
+                normalized_score,
+                trading_signal.score_breakdown.trend_score,
+                trading_signal.score_breakdown.momentum_score,
+                trading_signal.score_breakdown.volatility_score,
+                trading_signal.score_breakdown.volume_score,
+                trading_signal.score_breakdown.perp_score,
+                trading_signal.score_breakdown.total_score
+            );
+        }
 
         Some(SignalOutput::new(
             direction,

@@ -75,10 +75,30 @@ impl SignalRuntime {
             .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("Market data error: {}", e))) as Box<dyn std::error::Error + Send + Sync>)?;
 
         if candles.is_empty() {
+            println!("  [DEBUG] {}: No candles available yet - waiting for WebSocket data", symbol);
             return Ok(None);
         }
 
+        println!("  [DEBUG] {}: Evaluating with {} candles (need {})", symbol, candles.len(), crate::signals::engine::MIN_CANDLES);
+        
+        if candles.len() < crate::signals::engine::MIN_CANDLES {
+            println!("  [DEBUG] {}: Not enough candles ({} < {}) - waiting for more candles to accumulate (1m candles arrive every minute)", symbol, candles.len(), crate::signals::engine::MIN_CANDLES);
+            return Ok(None);
+        }
+        
         let signal = SignalEngine::evaluate(&candles, symbol);
+        
+        if signal.is_none() {
+            println!("  [DEBUG] {}: Signal evaluation returned None (likely insufficient data or neutral score)", symbol);
+        } else if let Some(ref sig) = signal {
+            println!("  [DEBUG] {}: Signal generated - Direction: {:?}, Confidence: {:.2}%, Reasons: {:?}", 
+                symbol,
+                sig.direction,
+                sig.confidence * 100.0,
+                sig.reasons
+            );
+        }
+        
         Ok(signal)
     }
 }
