@@ -1,7 +1,7 @@
 //! Integration tests for market scenarios
 
-use kryptex::models::indicators::Candle;
-use kryptex::signals::engine::SignalEngine;
+use perptrix::models::indicators::Candle;
+use perptrix::signals::engine::SignalEngine;
 use chrono::Utc;
 
 fn create_uptrend_candles(count: usize) -> Vec<Candle> {
@@ -99,7 +99,7 @@ fn test_strong_uptrend() {
     let s = signal.unwrap();
     assert!(s.confidence > 0.0);
     // In a strong uptrend, we'd expect Long or Neutral signal
-    assert!(matches!(s.direction, kryptex::models::signal::SignalDirection::Long | kryptex::models::signal::SignalDirection::Neutral));
+    assert!(matches!(s.direction, perptrix::models::signal::SignalDirection::Long | perptrix::models::signal::SignalDirection::Neutral));
 }
 
 #[test]
@@ -110,7 +110,7 @@ fn test_strong_downtrend() {
     let s = signal.unwrap();
     assert!(s.confidence > 0.0);
     // In a strong downtrend, we'd expect Short or Neutral signal
-    assert!(matches!(s.direction, kryptex::models::signal::SignalDirection::Short | kryptex::models::signal::SignalDirection::Neutral));
+    assert!(matches!(s.direction, perptrix::models::signal::SignalDirection::Short | perptrix::models::signal::SignalDirection::Neutral));
 }
 
 #[test]
@@ -121,7 +121,7 @@ fn test_ranging_market() {
     let s = signal.unwrap();
     assert!(s.confidence > 0.0);
     // In a ranging market, Neutral is more likely
-    assert!(matches!(s.direction, kryptex::models::signal::SignalDirection::Long | kryptex::models::signal::SignalDirection::Short | kryptex::models::signal::SignalDirection::Neutral));
+    assert!(matches!(s.direction, perptrix::models::signal::SignalDirection::Long | perptrix::models::signal::SignalDirection::Short | perptrix::models::signal::SignalDirection::Neutral));
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn test_major_reversal() {
     let s = signal.unwrap();
     assert!(s.confidence > 0.0);
     // Reversal scenarios might show mixed signals
-    assert!(matches!(s.direction, kryptex::models::signal::SignalDirection::Long | kryptex::models::signal::SignalDirection::Short | kryptex::models::signal::SignalDirection::Neutral));
+    assert!(matches!(s.direction, perptrix::models::signal::SignalDirection::Long | perptrix::models::signal::SignalDirection::Short | perptrix::models::signal::SignalDirection::Neutral));
 }
 
 

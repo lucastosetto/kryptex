@@ -1,6 +1,6 @@
 //! Unit tests for signal runtime
 
-use kryptex::core::runtime::{RuntimeConfig, SignalRuntime};
+use perptrix::core::runtime::{RuntimeConfig, SignalRuntime};
 
 #[test]
 fn test_runtime_config_default() {

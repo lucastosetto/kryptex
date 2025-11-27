@@ -1,6 +1,6 @@
 //! Unit tests for market data provider
 
-use kryptex::services::market_data::{MarketDataProvider, PlaceholderMarketDataProvider};
+use perptrix::services::market_data::{MarketDataProvider, PlaceholderMarketDataProvider};
 
 #[test]
 fn test_placeholder_provider() {

@@ -1,7 +1,7 @@
 //! Unit tests for MACD indicator
 
-use kryptex::indicators::momentum::{calculate_macd, calculate_macd_default};
-use kryptex::models::indicators::Candle;
+use perptrix::indicators::momentum::{calculate_macd, calculate_macd_default};
+use perptrix::models::indicators::Candle;
 use chrono::Utc;
 
 fn create_test_candles(count: usize, base_price: f64) -> Vec<Candle> {

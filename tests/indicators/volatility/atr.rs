@@ -1,7 +1,7 @@
 //! Unit tests for ATR indicator
 
-use kryptex::indicators::volatility::{calculate_atr, calculate_atr_default};
-use kryptex::models::indicators::Candle;
+use perptrix::indicators::volatility::{calculate_atr, calculate_atr_default};
+use perptrix::models::indicators::Candle;
 use chrono::Utc;
 
 fn create_volatile_candles(count: usize) -> Vec<Candle> {

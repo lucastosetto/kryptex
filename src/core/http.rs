@@ -41,7 +41,7 @@ pub async fn health_check(State(state): State<AppState>) -> Result<Json<Value>, 
     Ok(Json(json!({
         "status": health.status,
         "uptime_seconds": health.uptime_seconds,
-        "service": "kryptex-signal-engine"
+        "service": "perptrix-signal-engine"
     })))
 }
 

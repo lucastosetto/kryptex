@@ -1,6 +1,6 @@
 //! Unit tests for common math utilities
 
-use kryptex::common::math::*;
+use perptrix::common::math::*;
 
 #[test]
 fn test_sma() {

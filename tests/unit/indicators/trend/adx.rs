@@ -1,7 +1,7 @@
 //! Unit tests for ADX indicator
 
-use kryptex::indicators::trend::{calculate_adx, calculate_adx_default};
-use kryptex::models::indicators::Candle;
+use perptrix::indicators::trend::{calculate_adx, calculate_adx_default};
+use perptrix::models::indicators::Candle;
 use chrono::Utc;
 
 fn create_trending_candles(count: usize, uptrend: bool) -> Vec<Candle> {

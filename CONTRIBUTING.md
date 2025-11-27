@@ -1,6 +1,6 @@
-# Contributing to Kryptex
+# Contributing to Perptrix
 
-Thanks for your interest in improving Kryptex! Please follow these guidelines
+Thanks for your interest in improving Perptrix! Please follow these guidelines
 to keep the workflow smooth.
 
 ## Getting Started
@@ -32,6 +32,6 @@ When opening a PR:
 
 ## Licensing
 
-By contributing to Kryptex, you agree that your contributions will be licensed
+By contributing to Perptrix, you agree that your contributions will be licensed
 under the MIT License, the same license that covers the rest of the project.
 

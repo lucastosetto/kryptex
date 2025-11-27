@@ -1,5 +1,5 @@
-use kryptex::indicators::validation::*;
-use kryptex::models::indicators::*;
+use perptrix::indicators::validation::*;
+use perptrix::models::indicators::*;
 
 #[test]
 fn test_validate_rsi_valid() {

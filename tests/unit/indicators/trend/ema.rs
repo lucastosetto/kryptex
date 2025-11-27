@@ -1,7 +1,7 @@
 //! Unit tests for EMA indicator
 
-use kryptex::indicators::trend::{calculate_ema, calculate_emas, check_ema_cross};
-use kryptex::models::indicators::Candle;
+use perptrix::indicators::trend::{calculate_ema, calculate_emas, check_ema_cross};
+use perptrix::models::indicators::Candle;
 use chrono::Utc;
 
 fn create_test_candles(count: usize, base_price: f64) -> Vec<Candle> {

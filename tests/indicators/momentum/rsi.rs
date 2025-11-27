@@ -1,7 +1,7 @@
 //! Unit tests for RSI indicator
 
-use kryptex::indicators::momentum::{calculate_rsi, calculate_rsi_default};
-use kryptex::models::indicators::Candle;
+use perptrix::indicators::momentum::{calculate_rsi, calculate_rsi_default};
+use perptrix::models::indicators::Candle;
 use chrono::Utc;
 
 fn create_uptrend_candles(count: usize) -> Vec<Candle> {

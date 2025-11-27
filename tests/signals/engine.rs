@@ -1,7 +1,7 @@
 //! Unit tests for signal engine
 
-use kryptex::signals::engine::SignalEngine;
-use kryptex::models::indicators::Candle;
+use perptrix::signals::engine::SignalEngine;
+use perptrix::models::indicators::Candle;
 use chrono::Utc;
 
 fn create_uptrend_candles(count: usize) -> Vec<Candle> {

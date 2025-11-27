@@ -1,7 +1,7 @@
 //! Unit tests for Bollinger Bands indicator
 
-use kryptex::indicators::volatility::{calculate_bollinger_bands, calculate_bollinger_bands_default};
-use kryptex::models::indicators::Candle;
+use perptrix::indicators::volatility::{calculate_bollinger_bands, calculate_bollinger_bands_default};
+use perptrix::models::indicators::Candle;
 use chrono::Utc;
 
 fn create_test_candles(count: usize, base_price: f64, volatility: f64) -> Vec<Candle> {

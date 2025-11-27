@@ -1,7 +1,7 @@
 //! Unit tests for SuperTrend indicator
 
-use kryptex::indicators::structure::{calculate_supertrend, calculate_supertrend_default};
-use kryptex::models::indicators::Candle;
+use perptrix::indicators::structure::{calculate_supertrend, calculate_supertrend_default};
+use perptrix::models::indicators::Candle;
 use chrono::Utc;
 
 fn create_trending_candles(count: usize, uptrend: bool) -> Vec<Candle> {

@@ -1,7 +1,7 @@
 //! Unit tests for Support/Resistance indicator
 
-use kryptex::indicators::structure::{calculate_support_resistance, calculate_support_resistance_default};
-use kryptex::models::indicators::Candle;
+use perptrix::indicators::structure::{calculate_support_resistance, calculate_support_resistance_default};
+use perptrix::models::indicators::Candle;
 use chrono::Utc;
 
 fn create_range_candles(count: usize, min: f64, max: f64) -> Vec<Candle> {

@@ -1,10 +1,10 @@
-//! Kryptex Signal Engine Server
+//! Perptrix Signal Engine Server
 //!
 //! Starts the HTTP server with health check endpoint and optionally
 //! runs periodic signal evaluation.
 
-use kryptex::core::http::start_server;
-use kryptex::core::runtime::{RuntimeConfig, SignalRuntime};
+use perptrix::core::http::start_server;
+use perptrix::core::runtime::{RuntimeConfig, SignalRuntime};
 use std::env;
 use tokio::signal;
 
@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| s.split(',').map(|s| s.trim().to_string()).collect())
         .unwrap_or_else(|| vec!["BTC".to_string()]);
     
-    println!("Starting Kryptex Signal Engine Server");
+    println!("Starting Perptrix Signal Engine Server");
     println!("  HTTP Server: http://0.0.0.0:{}", port);
     if eval_interval > 0 {
         println!("  Signal Evaluation: every {} seconds", eval_interval);

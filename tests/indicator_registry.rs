@@ -1,6 +1,6 @@
 //! Indicator registry and category organization tests
 
-use kryptex::indicators::registry::{IndicatorCategory, IndicatorRegistry};
+use perptrix::indicators::registry::{IndicatorCategory, IndicatorRegistry};
 
 #[test]
 fn test_category_weights_sum_to_one() {

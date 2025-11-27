@@ -1,6 +1,6 @@
 //! Unit tests for signal scoring
 
-use kryptex::signals::scoring::*;
+use perptrix::signals::scoring::*;
 
 #[test]
 fn test_normalize_score() {

@@ -1,7 +1,7 @@
 //! Unit tests for signal aggregation
 
-use kryptex::indicators::registry::IndicatorCategory;
-use kryptex::signals::aggregation::{Aggregator, IndicatorScore};
+use perptrix::indicators::registry::IndicatorCategory;
+use perptrix::signals::aggregation::{Aggregator, IndicatorScore};
 
 #[test]
 fn test_aggregate_by_category() {

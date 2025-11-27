@@ -1,7 +1,7 @@
 //! Unit tests for signal decision logic
 
-use kryptex::models::signal::SignalDirection;
-use kryptex::signals::decision::{DirectionThresholds, StopLossTakeProfit};
+use perptrix::models::signal::SignalDirection;
+use perptrix::signals::decision::{DirectionThresholds, StopLossTakeProfit};
 
 #[test]
 fn test_determine_direction_long() {

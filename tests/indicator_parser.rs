@@ -1,4 +1,4 @@
-use kryptex::indicators::parser::*;
+use perptrix::indicators::parser::*;
 use std::collections::HashMap;
 
 #[test]

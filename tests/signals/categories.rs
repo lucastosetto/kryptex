@@ -1,7 +1,7 @@
 //! Unit tests for signal categories
 
-use kryptex::indicators::registry::IndicatorCategory;
-use kryptex::signals::categories::CategoryWeights;
+use perptrix::indicators::registry::IndicatorCategory;
+use perptrix::signals::categories::CategoryWeights;
 
 #[test]
 fn test_weights_sum_to_one() {

@@ -1,10 +1,10 @@
-# Kryptex
+# Perptrix
 
 A modular crypto perpetuals signal generation and execution engine built in Rust.
 
 ## Overview
 
-Kryptex is designed to:
+Perptrix is designed to:
 1. Receive market data from exchanges (initially Hyperliquid)
 2. Calculate technical indicators
 3. Generate trading signals with recommended stop loss (SL) and take profit (TP) percentages
@@ -13,7 +13,7 @@ Kryptex is designed to:
 
 ## Current Status
 
-Kryptex now ships the full Phase 2 signal engine defined in the [RFC](https://github.com/lucastosetto/kryptex/wiki/1.-RFC-%E2%80%90-Kryptex:-Crypto-Perps-Signal-&-Execution-Engine), plus scaffolding for the Phase 3 cloud runtime. Indicator computation, aggregation, decisioning, and SL/TP logic are implemented, while runtime integration (live data, HTTP signal APIs, metrics, exchange execution) is still pending.
+Perptrix now ships the full Phase 2 signal engine defined in the [RFC](https://github.com/lucastosetto/perptrix/wiki/1.-RFC-%E2%80%90-Perptrix:-Crypto-Perps-Signal-&-Execution-Engine), plus scaffolding for the Phase 3 cloud runtime. Indicator computation, aggregation, decisioning, and SL/TP logic are implemented, while runtime integration (live data, HTTP signal APIs, metrics, exchange execution) is still pending.
 
 ### Implemented
 
@@ -169,7 +169,7 @@ Response:
 {
   "status": "healthy",
   "uptime_seconds": 0,
-  "service": "kryptex-signal-engine"
+  "service": "perptrix-signal-engine"
 }
 ```
 
@@ -182,8 +182,8 @@ Response:
 Evaluate signals from candle data:
 
 ```rust
-use kryptex::signals::engine::SignalEngine;
-use kryptex::models::indicators::Candle;
+use perptrix::signals::engine::SignalEngine;
+use perptrix::models::indicators::Candle;
 use chrono::Utc;
 
 // Create candle data
@@ -206,9 +206,9 @@ if let Some(signal) = SignalEngine::evaluate(&candles, "BTC") {
 Calculate specific indicators:
 
 ```rust
-use kryptex::indicators::momentum::{calculate_rsi_default, calculate_macd_default};
-use kryptex::indicators::trend::calculate_ema;
-use kryptex::indicators::volatility::calculate_atr_default;
+use perptrix::indicators::momentum::{calculate_rsi_default, calculate_macd_default};
+use perptrix::indicators::trend::calculate_ema;
+use perptrix::indicators::volatility::calculate_atr_default;
 
 // RSI
 let rsi = calculate_rsi_default(&candles);
@@ -228,7 +228,7 @@ let atr = calculate_atr_default(&candles);
 Start the HTTP server and periodic task runner:
 
 ```rust
-use kryptex::core::{start_server, SignalRuntime, RuntimeConfig};
+use perptrix::core::{start_server, SignalRuntime, RuntimeConfig};
 
 // Start HTTP server (health check at /health)
 tokio::spawn(async {
@@ -261,12 +261,12 @@ Add exchange-provided fixture datasets + performance benchmarks before promoting
 
 ### Persistence
 
-Signals are automatically stored in `kryptex_signals.db`:
+Signals are automatically stored in `perptrix_signals.db`:
 
 ```rust
-use kryptex::db::SignalDatabase;
+use perptrix::db::SignalDatabase;
 
-let db = SignalDatabase::new("kryptex_signals.db")?;
+let db = SignalDatabase::new("perptrix_signals.db")?;
 db.store_signal(&signal)?;
 
 let all_signals = db.get_all_signals()?;

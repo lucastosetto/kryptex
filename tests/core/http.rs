@@ -1,6 +1,6 @@
 //! Unit tests for HTTP server
 
-use kryptex::core::http::{health_check, AppState, HealthStatus};
+use perptrix::core::http::{health_check, AppState, HealthStatus};
 use axum::extract::State;
 use std::sync::Arc;
 use tokio::sync::RwLock;
