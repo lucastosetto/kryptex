@@ -4,6 +4,7 @@ use crate::config;
 use crate::models::indicators::Candle;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use tracing::debug;
 
 #[derive(Debug, Deserialize)]
 struct HyperliquidCandleResponse {
@@ -117,7 +118,7 @@ impl HyperliquidRestClient {
         })?;
 
         if !status.is_success() {
-            eprintln!("  [DEBUG] Hyperliquid REST API error response: {}", text);
+            debug!(status = %status, response = %text, "Hyperliquid REST API error response");
             return Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("HTTP error: {} - Response: {}", status, text),

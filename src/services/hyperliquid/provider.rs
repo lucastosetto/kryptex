@@ -11,6 +11,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
+use tracing::{debug, error, warn};
 
 use super::client::{ClientEvent, HyperliquidClient};
 use super::messages::{CandleData, CandleUpdate, RequestMessage, Subscription, WebSocketMessage};
@@ -78,27 +79,27 @@ impl HyperliquidMarketDataProvider {
     async fn subscribe_candle(&self, coin: &str, interval: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Fetch historical candles (even if database is unavailable, we can use Redis and in-memory)
         let historical_count = config::get_historical_candle_count();
-        println!("  [DEBUG] Fetching {} historical candles for {}/{}", historical_count, coin, interval);
+        debug!(coin = %coin, interval = %interval, count = historical_count, "Fetching {} historical candles for {}/{}", historical_count, coin, interval);
         
         match self.rest_client.fetch_historical_candles(coin, interval, historical_count).await {
             Ok(historical_candles) => {
-                println!("  [DEBUG] Fetched {} historical candles for {}/{}", historical_candles.len(), coin, interval);
+                debug!(coin = %coin, interval = %interval, count = historical_candles.len(), "Fetched {} historical candles for {}/{}", historical_candles.len(), coin, interval);
                 
                 // Store in QuestDB if available
                 if let Some(ref db) = self.database {
                     if let Err(e) = db.store_candles_batch(coin, interval, &historical_candles).await {
-                        eprintln!("  [WARN] Failed to store historical candles in QuestDB: {}", e);
+                        warn!(coin = %coin, interval = %interval, error = %e, "Failed to store historical candles in QuestDB");
                     } else {
-                        println!("  [DEBUG] Stored {} historical candles in QuestDB", historical_candles.len());
+                        debug!(coin = %coin, interval = %interval, count = historical_candles.len(), "Stored {} historical candles in QuestDB", historical_candles.len());
                     }
                 }
                 
                 // Cache in Redis if available
                 if let Some(ref cache) = self.cache {
                     if let Err(e) = cache.cache_candles(coin, interval, &historical_candles).await {
-                        eprintln!("  [WARN] Failed to cache historical candles in Redis: {}", e);
+                        warn!(coin = %coin, interval = %interval, error = %e, "Failed to cache historical candles in Redis");
                     } else {
-                        println!("  [DEBUG] Cached {} historical candles in Redis", historical_candles.len());
+                        debug!(coin = %coin, interval = %interval, count = historical_candles.len(), "Cached {} historical candles in Redis", historical_candles.len());
                     }
                 }
                 
@@ -113,10 +114,10 @@ impl HyperliquidMarketDataProvider {
                 while candles.len() > 1000 {
                     candles.pop_front();
                 }
-                println!("  [DEBUG] Loaded {} historical candles into memory buffer", candles.len());
+                debug!(symbol = %symbol_key, count = candles.len(), "Loaded {} historical candles into memory buffer", candles.len());
             }
             Err(e) => {
-                eprintln!("  [WARN] Failed to fetch historical candles for {}/{}: {}", coin, interval, e);
+                warn!(coin = %coin, interval = %interval, error = %e, "Failed to fetch historical candles for {}/{}", coin, interval);
             }
         }
         
@@ -132,7 +133,7 @@ impl HyperliquidMarketDataProvider {
         if self.client.is_connected().await {
             self.subscribe_candle_internal(coin, interval).await
         } else {
-            println!("  [DEBUG] Not connected yet, subscription queued for {}/{}", coin, interval);
+            debug!(coin = %coin, interval = %interval, "Not connected yet, subscription queued for {}/{}", coin, interval);
             Ok(())
         }
     }
@@ -150,7 +151,7 @@ impl HyperliquidMarketDataProvider {
         let json = serde_json::to_string(&request)
             .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())) as Box<dyn std::error::Error + Send + Sync>)?;
         
-        println!("  [DEBUG] Sending subscription: {}", json);
+        debug!(subscription = %json, "Sending subscription");
         
         self.client.send_text(json).await
             .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("WebSocket send error: {}", e))) as Box<dyn std::error::Error + Send + Sync>)?;
@@ -200,29 +201,29 @@ impl TaskProvider {
                 match event {
                     ClientEvent::Message(text) => {
                         if let Err(e) = self.process_message(&text).await {
-                            eprintln!("Error processing message: {}", e);
+                            error!(error = %e, "Error processing message");
                         }
                     }
                     ClientEvent::Connected => {
-                        println!("  [DEBUG] TaskProvider: WebSocket connected, resubscribing...");
+                        debug!("WebSocket connected, resubscribing...");
                         // Wait a moment for connection to stabilize
                         sleep(Duration::from_millis(500)).await;
                         // Resubscribe to all pending subscriptions
                         let pending = self.pending_subscriptions.read().await.clone();
-                        println!("  [DEBUG] Resubscribing to {} pending subscriptions", pending.len());
+                        debug!(count = pending.len(), "Resubscribing to {} pending subscriptions", pending.len());
                         for (coin, interval) in pending {
                             if let Err(e) = self.subscribe_candle_internal(&coin, &interval).await {
-                                eprintln!("  [DEBUG] Failed to resubscribe to {} {}: {}", coin, interval, e);
+                                debug!(coin = %coin, interval = %interval, error = %e, "Failed to resubscribe to {} {}", coin, interval);
                             } else {
-                                println!("  [DEBUG] Resubscribed to {} {}", coin, interval);
+                                debug!(coin = %coin, interval = %interval, "Resubscribed to {} {}", coin, interval);
                             }
                         }
                     }
                     ClientEvent::Disconnected => {
-                        eprintln!("  [DEBUG] TaskProvider: WebSocket disconnected");
+                        debug!("WebSocket disconnected");
                     }
                     ClientEvent::Error(e) => {
-                        eprintln!("  [DEBUG] TaskProvider: WebSocket error: {}", e);
+                        error!(error = %e, "WebSocket error");
                     }
                 }
             } else {
@@ -247,7 +248,7 @@ impl TaskProvider {
         let json = serde_json::to_string(&request)
             .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())) as Box<dyn std::error::Error + Send + Sync>)?;
         
-        println!("  [DEBUG] TaskProvider sending subscription: {}", json);
+        debug!(subscription = %json, "TaskProvider sending subscription");
         
         self.client.send_text(json).await
             .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("WebSocket send error: {}", e))) as Box<dyn std::error::Error + Send + Sync>)?;
@@ -263,7 +264,7 @@ impl TaskProvider {
         } else {
             text.to_string()
         };
-        println!("  [DEBUG] Raw message received: {}", display_text);
+        debug!(message = %display_text, "Raw message received");
         
         // Try to parse as our known message types
         let msg: WebSocketMessage = match serde_json::from_str(text) {
@@ -272,28 +273,28 @@ impl TaskProvider {
                 // If it's not a known format, check if it might be candle data with different structure
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
                     if let Some(channel) = value.get("channel").and_then(|c| c.as_str()) {
-                        println!("  [DEBUG] Unknown message format with channel: '{}'", channel);
+                        debug!(channel = %channel, "Unknown message format with channel");
                         // Log the full structure for debugging
                         if let Some(data) = value.get("data") {
-                            println!("  [DEBUG] Message data type: {:?}", data);
+                            debug!(data = ?data, "Message data type");
                         }
                         // Try to parse as candle if channel looks like it
                         if channel.contains("candle") || channel == "candle" {
-                            println!("  [DEBUG] Attempting to parse as candle data...");
+                            debug!("Attempting to parse as candle data...");
                             if let Ok(candle_data) = serde_json::from_value::<CandleData>(value.clone()) {
-                                println!("  [DEBUG] Successfully parsed as candle data (fallback)");
+                                debug!("Successfully parsed as candle data (fallback)");
                                 if let Err(e) = self.process_candle_update(candle_data.data).await {
-                                    eprintln!("  [ERROR] Error processing candle update: {}", e);
+                                    error!(error = %e, "Error processing candle update");
                                 }
                                 return Ok(());
                             } else {
-                                println!("  [DEBUG] Failed to parse as CandleData, trying alternative formats...");
+                                debug!("Failed to parse as CandleData, trying alternative formats...");
                                 // Try parsing data as direct CandleUpdate
                                 if let Some(data_obj) = value.get("data") {
                                     if let Ok(candle_update) = serde_json::from_value::<CandleUpdate>(data_obj.clone()) {
-                                        println!("  [DEBUG] Parsed data as direct CandleUpdate");
+                                        debug!("Parsed data as direct CandleUpdate");
                                         if let Err(e) = self.process_candle_update(candle_update).await {
-                                            eprintln!("  [ERROR] Error processing candle update: {}", e);
+                                            error!(error = %e, "Error processing candle update");
                                         }
                                         return Ok(());
                                     }
@@ -301,25 +302,25 @@ impl TaskProvider {
                             }
                         }
                     } else {
-                        println!("  [DEBUG] Message has no 'channel' field");
+                        debug!("Message has no 'channel' field");
                     }
                 }
-                eprintln!("  [DEBUG] Failed to parse message: {} - First 200 chars: {}", e, &text.chars().take(200).collect::<String>());
+                debug!(error = %e, message_preview = %text.chars().take(200).collect::<String>(), "Failed to parse message");
                 return Ok(());
             }
         };
 
         match msg {
             WebSocketMessage::CandleData(candle_data) => {
-                println!("  [DEBUG] Received candle data for channel '{}'", candle_data.channel);
+                debug!(channel = %candle_data.channel, "Received candle data for channel");
                 if let Err(e) = self.process_candle_update(candle_data.data).await {
-                    eprintln!("  [ERROR] Error processing candle update: {}", e);
+                    error!(error = %e, "Error processing candle update");
                 } else {
-                    println!("  [DEBUG] Successfully processed candle update");
+                    debug!("Successfully processed candle update");
                 }
             }
             WebSocketMessage::AllMidsData(mids_data) => {
-                println!("  [DEBUG] Received allMids data: {} prices", mids_data.data.len());
+                debug!(count = mids_data.data.len(), "Received allMids data: {} prices", mids_data.data.len());
                 for mid in mids_data.data {
                     let price: f64 = mid.px.parse().unwrap_or(0.0);
                     let mut prices = self.latest_prices.write().await;
@@ -333,10 +334,10 @@ impl TaskProvider {
                     Subscription::Notification { user, .. } => format!("notification/{}", user),
                 };
                 let snapshot_info = resp.is_snapshot.map(|s| if s { " (snapshot)" } else { "" }).unwrap_or("");
-                println!("  [DEBUG] Subscription response: {} for {}{}", resp.data.method, sub_info, snapshot_info);
+                debug!(method = %resp.data.method, subscription = %sub_info, snapshot = resp.is_snapshot.is_some(), "Subscription response: {} for {}{}", resp.data.method, sub_info, snapshot_info);
             }
             WebSocketMessage::Error(err) => {
-                eprintln!("WebSocket error: {}", err.data.error);
+                error!(error = %err.data.error, "WebSocket error");
             }
         }
 
@@ -347,7 +348,17 @@ impl TaskProvider {
         let coin = &update.coin;
         let interval = &update.interval;
         
-        println!("  [DEBUG] Processing candle: {} {} - O:{} H:{} L:{} C:{} V:{}", coin, interval, update.open, update.high, update.low, update.close, update.volume);
+        debug!(
+            coin = %coin,
+            interval = %interval,
+            open = %update.open,
+            high = %update.high,
+            low = %update.low,
+            close = %update.close,
+            volume = %update.volume,
+            "Processing candle: {} {} - O:{} H:{} L:{} C:{} V:{}",
+            coin, interval, update.open, update.high, update.low, update.close, update.volume
+        );
 
         let open: f64 = update.open.parse()
             .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Invalid open price: {}", e))) as Box<dyn std::error::Error + Send + Sync>)?;
@@ -369,7 +380,7 @@ impl TaskProvider {
         // Store in QuestDB
         if let Some(ref db) = self.database {
             if let Err(e) = db.store_candle(coin, interval, &candle).await {
-                eprintln!("  [WARN] Failed to store candle in QuestDB: {}", e);
+                warn!(coin = %coin, interval = %interval, error = %e, "Failed to store candle in QuestDB");
             }
         }
 
@@ -387,7 +398,7 @@ impl TaskProvider {
             candles.pop_front();
         }
 
-        println!("  [DEBUG] Stored candle for {}: total candles = {}", symbol_key, candles.len());
+        debug!(symbol = %symbol_key, count = candles.len(), "Stored candle for {}: total candles = {}", symbol_key, candles.len());
 
         // Update Redis cache - get current cached candles, add new one, and update cache
         if let Some(ref cache) = self.cache {
@@ -401,12 +412,12 @@ impl TaskProvider {
                 }
                 // Update cache
                 if let Err(e) = cache.cache_candles(coin, interval, &cached_candles).await {
-                    eprintln!("  [WARN] Failed to update Redis cache: {}", e);
+                    warn!(coin = %coin, interval = %interval, error = %e, "Failed to update Redis cache");
                 }
             } else {
                 // Cache miss, just cache this single candle
                 if let Err(e) = cache.cache_candles(coin, interval, &[candle.clone()]).await {
-                    eprintln!("  [WARN] Failed to cache candle in Redis: {}", e);
+                    warn!(coin = %coin, interval = %interval, error = %e, "Failed to cache candle in Redis");
                 }
             }
         }
@@ -436,7 +447,7 @@ impl MarketDataProvider for HyperliquidMarketDataProvider {
                     let start = cached_candles.len() - limit;
                     cached_candles = cached_candles[start..].to_vec();
                 }
-                println!("  [DEBUG] get_candles for {}: found {} candles in Redis cache", symbol_key, cached_candles.len());
+                debug!(symbol = %symbol_key, count = cached_candles.len(), "get_candles for {}: found {} candles in Redis cache", symbol_key, cached_candles.len());
                 return Ok(cached_candles);
             }
         }
@@ -446,7 +457,7 @@ impl MarketDataProvider for HyperliquidMarketDataProvider {
             match db.get_candles(symbol, interval, Some(limit)).await {
                 Ok(mut db_candles) => {
                     db_candles.sort_by_key(|c| c.timestamp);
-                    println!("  [DEBUG] get_candles for {}: found {} candles in QuestDB", symbol_key, db_candles.len());
+                    debug!(symbol = %symbol_key, count = db_candles.len(), "get_candles for {}: found {} candles in QuestDB", symbol_key, db_candles.len());
                     
                     // Update Redis cache with these candles
                     if let Some(ref cache) = self.cache {
@@ -456,7 +467,7 @@ impl MarketDataProvider for HyperliquidMarketDataProvider {
                     return Ok(db_candles);
                 }
                 Err(e) => {
-                    eprintln!("  [WARN] Failed to get candles from QuestDB: {}", e);
+                    warn!(symbol = %symbol, interval = %interval, error = %e, "Failed to get candles from QuestDB");
                 }
             }
         }
@@ -467,7 +478,7 @@ impl MarketDataProvider for HyperliquidMarketDataProvider {
             let mut result: Vec<Candle> = candles.iter().cloned().collect();
             result.sort_by_key(|c| c.timestamp);
             
-            println!("  [DEBUG] get_candles for {}: found {} candles in memory buffer", symbol_key, result.len());
+            debug!(symbol = %symbol_key, count = result.len(), "get_candles for {}: found {} candles in memory buffer", symbol_key, result.len());
             
             // Return last `limit` candles
             if result.len() > limit {
@@ -477,11 +488,11 @@ impl MarketDataProvider for HyperliquidMarketDataProvider {
             
             Ok(result)
         } else {
-            println!("  [DEBUG] get_candles for {}: no candles found, subscribing...", symbol_key);
+            debug!(symbol = %symbol_key, "get_candles for {}: no candles found, subscribing...", symbol_key);
             // Try to subscribe if we don't have data yet
             drop(candles_map); // Release lock before async call
             if let Err(e) = self.subscribe_candle(symbol, interval).await {
-                eprintln!("Failed to subscribe to {}: {}", symbol, e);
+                error!(symbol = %symbol, error = %e, "Failed to subscribe to {}", symbol);
             }
             Ok(Vec::new())
         }
@@ -494,7 +505,7 @@ impl MarketDataProvider for HyperliquidMarketDataProvider {
         } else {
             // Subscribe to get price updates
             if let Err(e) = self.subscribe_candle(symbol, self.get_primary_interval()).await {
-                eprintln!("Failed to subscribe to {}: {}", symbol, e);
+                error!(symbol = %symbol, error = %e, "Failed to subscribe to {}", symbol);
             }
             // Wait a bit for price to arrive
             tokio::time::sleep(Duration::from_millis(500)).await;
@@ -507,7 +518,7 @@ impl MarketDataProvider for HyperliquidMarketDataProvider {
         // Subscribe to all intervals for this symbol
         for interval in &self.candle_intervals {
             if let Err(e) = self.subscribe_candle(symbol, interval).await {
-                eprintln!("Failed to subscribe to {} {}: {}", symbol, interval, e);
+                error!(symbol = %symbol, interval = %interval, error = %e, "Failed to subscribe to {} {}", symbol, interval);
                 // Continue with other intervals even if one fails
             }
         }

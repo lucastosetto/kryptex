@@ -27,7 +27,7 @@ impl QuestDatabase {
         // Spawn connection task
         tokio::spawn(async move {
             if let Err(e) = connection.await {
-                eprintln!("QuestDB connection error: {}", e);
+                tracing::error!(error = %e, "QuestDB connection error");
             }
         });
 
@@ -147,7 +147,7 @@ impl QuestDatabase {
         // TODO: Optimize with batch insert when QuestDB supports it better
         for candle in candles {
             if let Err(e) = self.store_candle(symbol, interval, candle).await {
-                eprintln!("Failed to store candle in batch: {}", e);
+                tracing::warn!(symbol = %symbol, interval = %interval, error = %e, "Failed to store candle in batch");
             }
         }
         Ok(())

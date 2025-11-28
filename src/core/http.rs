@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
+use tracing::info;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -50,7 +51,7 @@ pub async fn start_server(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let app = create_router(state);
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
 
-    println!("HTTP server listening on port {}", port);
+    info!(port = port, "HTTP server listening on port {}", port);
     axum::serve(listener, app).await?;
 
     Ok(())

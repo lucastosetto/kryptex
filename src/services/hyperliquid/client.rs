@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{sleep, Duration};
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 pub type WsStream = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
@@ -50,10 +51,10 @@ impl HyperliquidClient {
                 Ok(()) => {
                     // Only print once per initial connection, not on every reconnect
                     if is_first_connection {
-                        println!("Hyperliquid WebSocket connected");
+                        info!("Hyperliquid WebSocket connected");
                         is_first_connection = false;
                     } else {
-                        println!("Hyperliquid WebSocket reconnected (delay was {:?})", current_delay);
+                        info!(delay = ?current_delay, "Hyperliquid WebSocket reconnected (delay was {:?})", current_delay);
                     }
                     current_delay = self.reconnect_delay;
                     
@@ -78,7 +79,7 @@ impl HyperliquidClient {
                 }
                 Err(e) => {
                     let error_msg = format!("{}", e);
-                    eprintln!("Failed to connect: {}. Retrying in {:?}...", error_msg, current_delay);
+                    warn!(error = %e, delay = ?current_delay, "Failed to connect: {}. Retrying in {:?}...", error_msg, current_delay);
                     sleep(current_delay).await;
                     current_delay = std::cmp::min(
                         current_delay * 2,
@@ -116,7 +117,7 @@ impl HyperliquidClient {
         tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
                 if let Err(e) = write.send(msg).await {
-                    eprintln!("Error sending message: {}", e);
+                    error!(error = %e, "Error sending message");
                     let _ = event_tx_writer.send(ClientEvent::Error(e.to_string()));
                     break;
                 }
@@ -133,7 +134,7 @@ impl HyperliquidClient {
                         let _ = event_tx_reader.send(ClientEvent::Message(text));
                     }
                     Ok(Message::Close(frame)) => {
-                        println!("  [DEBUG] WebSocket received Close frame: {:?}", frame);
+                        debug!(frame = ?frame, "WebSocket received Close frame");
                         let _ = event_tx_reader.send(ClientEvent::Disconnected);
                         break;
                     }
@@ -145,19 +146,19 @@ impl HyperliquidClient {
                         // Pong received, connection is alive
                     }
                     Ok(Message::Binary(data)) => {
-                        println!("  [DEBUG] WebSocket received binary message ({} bytes)", data.len());
+                        debug!(bytes = data.len(), "WebSocket received binary message ({} bytes)", data.len());
                     }
                     Ok(Message::Frame(_)) => {
                         // Raw frame, should be handled by tungstenite
                     }
                     Err(e) => {
-                        eprintln!("  [ERROR] WebSocket read error: {}", e);
+                        error!(error = %e, "WebSocket read error");
                         let _ = event_tx_reader.send(ClientEvent::Error(e.to_string()));
                         break;
                     }
                 }
             }
-            println!("  [DEBUG] WebSocket reader task ended");
+            debug!("WebSocket reader task ended");
         });
 
         Ok(())

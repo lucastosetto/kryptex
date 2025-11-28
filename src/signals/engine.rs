@@ -151,8 +151,16 @@ impl SignalEngine {
         let normalized_score = normalized_score.max(0.0).min(1.0);
         
         if direction == crate::models::signal::SignalDirection::Neutral {
-            eprintln!("  [DEBUG] {}: Neutral signal - Integer Score: {} (needs >= 3 for Long, <= -3 for Short). Normalized: {:.2}. Breakdown: T={}, M={}, V={}, Vol={}, P={}, Total={}", 
-                symbol,
+            tracing::debug!(
+                symbol = %symbol,
+                total_score = trading_signal.score_breakdown.total_score,
+                normalized_score = normalized_score,
+                trend_score = trading_signal.score_breakdown.trend_score,
+                momentum_score = trading_signal.score_breakdown.momentum_score,
+                volatility_score = trading_signal.score_breakdown.volatility_score,
+                volume_score = trading_signal.score_breakdown.volume_score,
+                perp_score = trading_signal.score_breakdown.perp_score,
+                "Neutral signal - Integer Score: {} (needs >= 3 for Long, <= -3 for Short). Normalized: {:.2}. Breakdown: T={}, M={}, V={}, Vol={}, P={}, Total={}",
                 trading_signal.score_breakdown.total_score,
                 normalized_score,
                 trading_signal.score_breakdown.trend_score,

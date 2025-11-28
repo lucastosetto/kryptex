@@ -7,15 +7,19 @@ use perptrix::cache::RedisCache;
 use perptrix::core::http::start_server;
 use perptrix::core::runtime::{RuntimeConfig, SignalRuntime};
 use perptrix::db::QuestDatabase;
+use perptrix::logging;
 use perptrix::services::hyperliquid::HyperliquidMarketDataProvider;
 use perptrix::services::market_data::MarketDataProvider;
 use std::env;
 use std::sync::Arc;
 use tokio::signal;
 use tokio::time::Duration;
+use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logging based on environment
+    logging::init_logging();
     let port = env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
@@ -39,18 +43,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .flatten();
 
     let env = perptrix::config::get_environment();
-    println!("Starting Perptrix Signal Engine Server");
-    println!("  Environment: {}", env);
-    println!("  HTTP Server: http://0.0.0.0:{}", port);
+    info!("Starting Perptrix Signal Engine Server");
+    info!(environment = %env, "Environment");
+    info!(port = port, "HTTP Server: http://0.0.0.0:{}", port);
     
     if eval_interval > 0 {
         let symbols = symbols.ok_or("SYMBOLS environment variable is required when EVAL_INTERVAL_SECONDS > 0")?;
-        println!("  Signal Evaluation: every {} seconds", eval_interval);
-        println!("  Symbols: {}", symbols.join(", "));
+        info!(interval = eval_interval, "Signal Evaluation: every {} seconds", eval_interval);
+        info!(symbols = ?symbols, "Symbols: {}", symbols.join(", "));
         
         let server_handle = tokio::spawn(async move {
             if let Err(e) = start_server(port).await {
-                eprintln!("HTTP server error: {}", e);
+                error!(error = %e, "HTTP server error");
             }
         });
 
@@ -60,35 +64,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         
         // Initialize QuestDB
-        println!("  Initializing QuestDB connection...");
+        info!("Initializing QuestDB connection...");
         let database = match QuestDatabase::new().await {
             Ok(db) => {
-                println!("  ✓ QuestDB connected");
+                info!("QuestDB connected");
                 Some(Arc::new(db))
             }
             Err(e) => {
-                eprintln!("  ⚠ Warning: Failed to connect to QuestDB: {}", e);
-                eprintln!("  Continuing without database - candles will only be stored in memory");
+                warn!(error = %e, "Failed to connect to QuestDB");
+                warn!("Continuing without database - candles will only be stored in memory");
                 None
             }
         };
         
         // Initialize Redis cache
-        println!("  Initializing Redis connection...");
+        info!("Initializing Redis connection...");
         let cache = match RedisCache::new().await {
             Ok(c) => {
-                println!("  ✓ Redis connected");
+                info!("Redis connected");
                 Some(Arc::new(c))
             }
             Err(e) => {
-                eprintln!("  ⚠ Warning: Failed to connect to Redis: {}", e);
-                eprintln!("  Continuing without cache - will use database/memory only");
+                warn!(error = %e, "Failed to connect to Redis");
+                warn!("Continuing without cache - will use database/memory only");
                 None
             }
         };
         
         // Initialize Hyperliquid provider
-        println!("  Initializing Hyperliquid WebSocket provider...");
+        info!("Initializing Hyperliquid WebSocket provider...");
         let mut provider = HyperliquidMarketDataProvider::new();
         
         if let Some(ref db) = database {
@@ -99,12 +103,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         
         // Wait for connection to establish (with timeout)
-        println!("  Waiting for WebSocket connection...");
+        info!("Waiting for WebSocket connection...");
         let client = provider.client().clone();
         if client.wait_for_connection(Duration::from_secs(10)).await {
-            println!("  ✓ WebSocket connected");
+            info!("WebSocket connected");
         } else {
-            eprintln!("  ⚠ Warning: WebSocket connection timeout, subscriptions will be queued");
+            warn!("WebSocket connection timeout, subscriptions will be queued");
         }
         
         // Subscribe to symbols (will queue if not connected yet)
@@ -112,10 +116,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for symbol in &symbols {
             match provider.subscribe(symbol).await {
                 Ok(()) => {
-                    println!("  ✓ Subscribed to {} (or queued if not connected)", symbol);
+                    info!(symbol = %symbol, "Subscribed to {} (or queued if not connected)", symbol);
                 }
                 Err(e) => {
-                    eprintln!("  ✗ Error: Failed to subscribe to {}: {}", symbol, e);
+                    error!(symbol = %symbol, error = %e, "Failed to subscribe to {}", symbol);
                 }
             }
         }
@@ -127,36 +131,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let runtime_handle = tokio::spawn(async move {
             if let Err(e) = runtime.run().await {
-                eprintln!("Signal runtime error: {}", e);
+                error!(error = %e, "Signal runtime error");
             }
         });
 
         tokio::select! {
             _ = signal::ctrl_c() => {
-                println!("\nShutting down...");
+                info!("Shutting down...");
             }
             _ = server_handle => {
-                eprintln!("HTTP server stopped");
+                error!("HTTP server stopped");
             }
             _ = runtime_handle => {
-                eprintln!("Signal runtime stopped");
+                error!("Signal runtime stopped");
             }
         }
     } else {
-        println!("  Signal Evaluation: disabled (set EVAL_INTERVAL_SECONDS to enable)");
+        info!("Signal Evaluation: disabled (set EVAL_INTERVAL_SECONDS to enable)");
         
         let server_handle = tokio::spawn(async move {
             if let Err(e) = start_server(port).await {
-                eprintln!("HTTP server error: {}", e);
+                error!(error = %e, "HTTP server error");
             }
         });
 
         tokio::select! {
             _ = signal::ctrl_c() => {
-                println!("\nShutting down...");
+                info!("Shutting down...");
             }
             _ = server_handle => {
-                eprintln!("HTTP server stopped");
+                error!("HTTP server stopped");
             }
         }
     }
