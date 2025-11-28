@@ -144,12 +144,16 @@ impl SignalEngine {
         });
 
         // Debug: Log score even if neutral
-        let normalized_score = crate::signals::decision::DirectionThresholds::to_percentage(
-            trading_signal.score_breakdown.total_score as f64 / 12.0
-        );
+        // The actual decision uses integer score thresholds: >= 3 for Long, <= -3 for Short
+        // Normalize to 0-1 range for display (assuming max possible score is around ±12)
+        let max_possible_score = 12.0;
+        let normalized_score = (trading_signal.score_breakdown.total_score as f64 / max_possible_score + 1.0) / 2.0;
+        let normalized_score = normalized_score.max(0.0).min(1.0);
+        
         if direction == crate::models::signal::SignalDirection::Neutral {
-            eprintln!("  [DEBUG] {}: Neutral signal - Score: {:.2} (needs >0.51 for Long, <0.49 for Short). Breakdown: T={}, M={}, V={}, Vol={}, P={}, Total={}", 
+            eprintln!("  [DEBUG] {}: Neutral signal - Integer Score: {} (needs >= 3 for Long, <= -3 for Short). Normalized: {:.2}. Breakdown: T={}, M={}, V={}, Vol={}, P={}, Total={}", 
                 symbol,
+                trading_signal.score_breakdown.total_score,
                 normalized_score,
                 trading_signal.score_breakdown.trend_score,
                 trading_signal.score_breakdown.momentum_score,

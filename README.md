@@ -28,80 +28,87 @@ Perptrix implements a signal engine based on the [RFC](https://github.com/lucast
 - Signal aggregation with category-based scoring (`src/engine/aggregator.rs`)
 - Direction thresholds and ATR-driven SL/TP logic (`src/signals/decision.rs`)
 - Signal evaluation orchestrator (`src/signals/engine.rs`)
-- SQLite persistence layer (`src/db/sqlite.rs`)
+- QuestDB persistence layer for candles and signals (`src/db/questdb.rs`)
+- Redis caching layer for fast signal evaluation (`src/cache/redis.rs`)
 - Unit + integration tests covering indicators and multiple market regimes (`tests/**`)
 
-**Cloud Runtime (Partial):**
+**Market Data Integration:**
+- Hyperliquid WebSocket client for real-time candle updates (`src/services/hyperliquid/client.rs`)
+- Hyperliquid REST API client for historical candle fetching (`src/services/hyperliquid/rest.rs`)
+- Historical data fetching on startup (configurable count, default: 200 candles)
+- Automatic storage in QuestDB and caching in Redis
+- Multi-interval support (1m, 5m, 15m, 1h)
+
+**Cloud Runtime:**
 - HTTP server with health check endpoint (`/health`)
-- Periodic signal evaluation runtime (requires real market data provider)
-- Placeholder market data provider interface
+- Periodic signal evaluation runtime with real market data
+- Hyperliquid market data provider with WebSocket and REST integration
+- Environment-based configuration (sandbox/production)
 
 ### Missing / In Progress
 
 **Phase 3 Requirements:**
-- Live market data ingestion: `SignalRuntime` currently uses `PlaceholderMarketDataProvider`
-- HTTP API for retrieving latest signal/indicator breakdown (server only has `/health`)
 - Structured logging/metrics suitable for cloud monitoring (only `println!` statements)
-- Exchange adapters (Hyperliquid WebSocket, funding rate fetching)
-- OHLC reconstruction from real-time data
+- Funding rate and open interest real-time updates (historical data fetching implemented)
 
 **Future Phases:**
 - Execution engine (order placement, trade management)
 - Dashboard & backtester
 
-## 📋 RFC Alignment
-
-| RFC Item | Status | Notes |
-| --- | --- | --- |
-| **Indicators** | | |
-| Momentum: MACD, RSI | ✅ | Fully implemented (12/26/9, 14) |
-| Trend: EMA cross, SuperTrend | ✅ | EMA 20/50 cross, SuperTrend (10, 3.0) |
-| Volatility: Bollinger Bands, ATR | ✅ | Fully implemented (20 SMA, 2σ; 14 period) |
-| Volume: OBV, Volume Profile | ✅ | Implemented (beyond RFC Phase 2) |
-| Perp: Funding Rate, Open Interest | ✅ | Implemented (beyond RFC Phase 2) |
-| **Signal Engine** | | |
-| Category-based aggregation | ✅ | Integer scoring system (-3 to +3 per category) |
-| Direction thresholds (>60% Long, <40% Short) | ✅ | Implemented in `signals::decision` |
-| SL/TP logic (ATR × 1.2/2.0) | ✅ | Correctly implemented |
-| Explainability (per-indicator contributions) | ✅ | `Aggregator` returns reasons for each signal |
-| **Infrastructure** | | |
-| Persistence (SQLite) | ✅ | Schema and helpers ready but not wired into runtime |
-| Cloud runtime | ⚠️ Partial | `SignalRuntime` + Axum server exist; server only has `/health` |
-| **Phase 3 - Runtime** | | |
-| HTTP signal endpoint | ❌ | Needs endpoint(s) to fetch latest signal, indicator set, history |
-| Market data ingestion | ❌ | Only `PlaceholderMarketDataProvider`; no exchange adapters |
-| Logging + metrics | ❌ | No structured logging or metrics |
-| **Future Phases** | | |
-| Execution engine | ❌ | Not started |
-| Dashboard & backtester | ❌ | Not started |
-
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐
-│ Hyperliquid WS  │─────┐
-└───────────┬─────┘     │ Future adapters
-            │           │
+┌─────────────────────┐
+│ Hyperliquid REST    │───┐
+│ (Historical Data)   │   │
+└─────────────────────┘   │
+                          │
+┌─────────────────────┐   │
+│ Hyperliquid WS      │───┤
+│ (Real-time Updates) │   │
+└───────────┬─────────┘   │
+            │             │
+            ▼             │
+    ┌───────────────┐     │
+    │ Market Data   │     │
+    │   Provider    │     │
+    └───────┬───────┘     │
+            │             │
+            ├─────────────┘
+            │ Candles
             ▼
     ┌───────────────┐
-    │ Market Data   │
-    │   Pipeline    │
-    └───────┬───────┘
-            │ Candles / Indicators (POC)
-            ▼
-   ┌──────────────────┐
-   │ Indicator Engine │
-   └────────┬─────────┘
-            │ Signals
-            ▼
-  ┌─────────────────────────┐
-  │ Signal Interpreter      │
-  │ + SL/TP Recommendations │
-  └──────────┬──────────────┘
-             ▼
-      (Future) Trade Executor
-             ▼
-          Unified DB
+    │   QuestDB     │ (Persistent Storage)
+    └───────────────┘
+            │
+            ├──────────────┐
+            │              │
+            ▼              ▼
+    ┌───────────────┐  ┌───────────────┐
+    │     Redis     │  │ In-Memory     │
+    │    (Cache)    │  │   Buffer      │
+    └───────┬───────┘  └───────┬───────┘
+            │                  │
+            └──────────┬───────┘
+                       │
+                       ▼
+              ┌──────────────────┐
+              │ Indicator Engine │
+              └────────┬─────────┘
+                       │ Signals
+                       ▼
+            ┌─────────────────────────┐
+            │ Signal Interpreter      │
+            │ + SL/TP Recommendations │
+            └──────────┬──────────────┘
+                       │
+                       ▼
+            ┌─────────────────────────┐
+            │   QuestDB (Signals)     │
+            └─────────────────────────┘
+                       │
+                       ▼
+            (Future) Trade Executor
 ```
 
 ## 📁 Project Structure
@@ -115,7 +122,8 @@ perptrix/
     core/               # Cloud runtime (HTTP server, periodic task runner)
     ├── http.rs         # HTTP endpoints (health check)
     └── runtime.rs      # Periodic signal evaluation
-  db/                   # Persistence adapters (SQLite)
+  db/                   # Persistence adapters (QuestDB)
+  cache/                # Caching layer (Redis)
   evaluation/           # Signal scoring and validation utilities
   engine/               # Signal aggregation and scoring
     ├── aggregator.rs   # Category-based signal aggregation (integer scoring)
@@ -129,6 +137,12 @@ perptrix/
     └── registry.rs     # Indicator registry and category system
   models/               # Shared DTOs (Candle, IndicatorSet, SignalOutput)
   services/             # Market data provider interface
+    hyperliquid/        # Hyperliquid WebSocket and REST clients
+      client.rs         # WebSocket client with reconnection logic
+      messages.rs       # WebSocket message types
+      provider.rs       # Market data provider implementation
+      rest.rs           # REST API client for historical data
+      subscriptions.rs  # Subscription management
   signals/              # Signal evaluation engine
     ├── decision.rs     # Direction thresholds and SL/TP logic
     └── engine.rs       # Main signal evaluation orchestrator
@@ -142,6 +156,7 @@ perptrix/
 
 - Rust 1.70+ (2021 edition)
 - Cargo
+- Docker and Docker Compose (for local development with QuestDB and Redis)
 
 ### Build
 
@@ -154,6 +169,26 @@ cargo build
 ```bash
 cargo test
 ```
+
+### Local Development Setup
+
+Perptrix uses QuestDB for persistent storage and Redis for caching. Start the required services using Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+This will start:
+- **QuestDB** on ports 9000 (HTTP) and 8812 (PostgreSQL wire protocol)
+- **Redis** on port 6379
+
+To stop the services:
+
+```bash
+docker-compose down
+```
+
+To view QuestDB's web console, visit: http://localhost:9000
 
 ## 🚀 Usage
 
@@ -169,6 +204,12 @@ cargo run --bin server
 - `PORT` - HTTP server port (default: 8080)
 - `EVAL_INTERVAL_SECONDS` - Signal evaluation interval in seconds (default: 0 = disabled)
 - `SYMBOLS` - Comma-separated list of symbols to evaluate (required when `EVAL_INTERVAL_SECONDS > 0`)
+- `PERPTRIX_ENV` - Environment: `sandbox` or `production` (default: `production`)
+  - `sandbox` - Uses Hyperliquid testnet (wss://api.hyperliquid-testnet.xyz/ws)
+  - `production` - Uses Hyperliquid mainnet (wss://api.hyperliquid.xyz/ws)
+- `QUESTDB_URL` - QuestDB connection string (default: `host=localhost user=admin password=quest port=8812`)
+- `REDIS_URL` - Redis connection string (default: `redis://127.0.0.1/`)
+- `HISTORICAL_CANDLE_COUNT` - Number of historical candles to fetch on startup (default: 200)
 
 **Configuration File:**
 - Create a `config.json` file in the working directory to customize category weights and other settings (see `config.example.json` for a template)
@@ -180,11 +221,19 @@ cargo run --bin server
 # Custom port
 PORT=3000 cargo run --bin server
 
-# Enable periodic signal evaluation
+# Enable periodic signal evaluation (production)
 EVAL_INTERVAL_SECONDS=60 SYMBOLS=BTC cargo run --bin server
 
-# Full configuration
-PORT=8080 EVAL_INTERVAL_SECONDS=30 SYMBOLS=BTC,ETH cargo run --bin server
+# Sandbox environment with custom historical candle count
+PERPTRIX_ENV=sandbox EVAL_INTERVAL_SECONDS=60 SYMBOLS=BTC HISTORICAL_CANDLE_COUNT=500 cargo run --bin server
+
+# Full configuration with multiple symbols
+PORT=8080 EVAL_INTERVAL_SECONDS=30 SYMBOLS=BTC,ETH PERPTRIX_ENV=production cargo run --bin server
+
+# Custom database connections
+QUESTDB_URL="host=localhost user=admin password=quest port=8812" \
+REDIS_URL="redis://127.0.0.1:6379" \
+cargo run --bin server
 ```
 
 ### Health Check
@@ -204,7 +253,14 @@ Response:
 }
 ```
 
-**Note:** When periodic evaluation is enabled, it will use the placeholder data provider (returns empty data) until a real market data provider is implemented. Signals will only be generated when actual candle data is available.
+**Note:** The server automatically:
+1. Connects to QuestDB and Redis (with automatic reconnection if unavailable)
+2. Fetches historical candles from Hyperliquid REST API on startup
+3. Stores historical candles in QuestDB and caches them in Redis
+4. Subscribes to real-time candle updates via WebSocket
+5. Evaluates signals using cached/real-time data
+
+If QuestDB or Redis are unavailable, the system will gracefully degrade and continue operating with in-memory buffers.
 
 ## ⚡ Signal Engine
 
@@ -352,6 +408,8 @@ The signal engine uses integer scores to determine market bias, which maps to tr
 - **Short**: Total score ≤ -3 (Bearish or Strong Bearish bias)
 - **Neutral**: Total score between -3 and 3
 
+**Note:** The debug output shows both the integer score (used for decision making) and a normalized score (0-1 range) for reference. The integer score thresholds are what actually determine the signal direction.
+
 ### SL/TP Calculation
 - **Stop Loss**: ATR × 1.2 (as percentage of price)
 - **Take Profit**: ATR × 2.0 (as percentage of price)
@@ -375,7 +433,7 @@ The signal engine uses integer scores to determine market bias, which maps to tr
 ### ✅ Phase 1 — POC (Completed)
 - Receive external indicators
 - Generate LONG/SHORT signal + SL/TP + reasons
-- SQLite persistence
+- QuestDB persistence (migrated from SQLite)
 
 ### ✅ Phase 2 — Signal Engine (Completed)
 - **Momentum Indicators**: MACD (12/26/9), RSI (14)
@@ -386,14 +444,21 @@ The signal engine uses integer scores to determine market bias, which maps to tr
 - Category-based aggregation with integer scoring
 - Signal decision engine (Long/Short/Neutral thresholds)
 - SL/TP calculation from ATR
-- Cloud runtime with HTTP health check (partial)
+- Cloud runtime with HTTP health check
 
-### 🔜 Phase 3 — Exchange Adapter
-- WebSocket market data integration
-- Funding rate fetching
-- OHLC reconstruction
-- Exchange authentication
-- Real-time data pipeline
+### ✅ Phase 3 — Exchange Adapter (Completed)
+- WebSocket market data integration (Hyperliquid)
+- Historical candle fetching via REST API
+- OHLC reconstruction from real-time data
+- Environment-based configuration (sandbox/production)
+- Real-time data pipeline with automatic reconnection
+- QuestDB for persistent storage
+- Redis for fast caching
+- Docker Compose setup for local development
+
+### 🔜 Phase 3 — Remaining
+- Structured logging and metrics
+- Real-time funding rate and open interest updates
 
 ### 🔜 Phase 4 — Execution Engine
 - Order builder

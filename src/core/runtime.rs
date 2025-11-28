@@ -13,6 +13,7 @@ pub struct RuntimeConfig {
 pub struct SignalRuntime {
     config: RuntimeConfig,
     data_provider: Arc<dyn MarketDataProvider + Send + Sync>,
+    database: Option<Arc<crate::db::QuestDatabase>>,
 }
 
 impl SignalRuntime {
@@ -20,6 +21,7 @@ impl SignalRuntime {
         Self {
             config,
             data_provider: Arc::new(PlaceholderMarketDataProvider),
+            database: None,
         }
     }
 
@@ -30,7 +32,13 @@ impl SignalRuntime {
         Self {
             config,
             data_provider: Arc::new(provider),
+            database: None,
         }
+    }
+
+    pub fn with_database(mut self, database: Arc<crate::db::QuestDatabase>) -> Self {
+        self.database = Some(database);
+        self
     }
 
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -54,6 +62,13 @@ impl SignalRuntime {
                             signal.direction,
                             signal.confidence * 100.0
                         );
+                        
+                        // Store signal in database if available
+                        if let Some(ref db) = self.database {
+                            if let Err(e) = db.store_signal(&signal).await {
+                                eprintln!("Failed to store signal in database: {}", e);
+                            }
+                        }
                     }
                     Ok(None) => {
                         println!("No signal generated for {}", symbol);
@@ -102,3 +117,4 @@ impl SignalRuntime {
         Ok(signal)
     }
 }
+

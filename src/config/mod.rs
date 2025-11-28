@@ -129,3 +129,32 @@ pub fn get_environment() -> String {
         .unwrap_or_else(|_| "production".to_string())
         .to_lowercase()
 }
+
+/// Get the QuestDB connection string
+pub fn get_questdb_url() -> String {
+    std::env::var("QUESTDB_URL")
+        .unwrap_or_else(|_| "postgresql://admin:quest@localhost:8812/qdb".to_string())
+}
+
+/// Get the Redis connection string
+pub fn get_redis_url() -> String {
+    std::env::var("REDIS_URL")
+        .unwrap_or_else(|_| "redis://localhost:6379".to_string())
+}
+
+/// Get the Hyperliquid REST API URL based on environment
+pub fn get_hyperliquid_rest_url() -> String {
+    let env = get_environment();
+    match env.as_str() {
+        "sandbox" | "testnet" => "https://api.hyperliquid-testnet.xyz".to_string(),
+        _ => "https://api.hyperliquid.xyz".to_string(),
+    }
+}
+
+/// Get the number of historical candles to fetch on startup
+pub fn get_historical_candle_count() -> usize {
+    std::env::var("HISTORICAL_CANDLE_COUNT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(200)
+}

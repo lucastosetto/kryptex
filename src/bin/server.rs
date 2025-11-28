@@ -3,11 +3,14 @@
 //! Starts the HTTP server with health check endpoint and optionally
 //! runs periodic signal evaluation.
 
+use perptrix::cache::RedisCache;
 use perptrix::core::http::start_server;
 use perptrix::core::runtime::{RuntimeConfig, SignalRuntime};
+use perptrix::db::QuestDatabase;
 use perptrix::services::hyperliquid::HyperliquidMarketDataProvider;
 use perptrix::services::market_data::MarketDataProvider;
 use std::env;
+use std::sync::Arc;
 use tokio::signal;
 use tokio::time::Duration;
 
@@ -56,9 +59,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             symbols: symbols.clone(),
         };
         
+        // Initialize QuestDB
+        println!("  Initializing QuestDB connection...");
+        let database = match QuestDatabase::new().await {
+            Ok(db) => {
+                println!("  ✓ QuestDB connected");
+                Some(Arc::new(db))
+            }
+            Err(e) => {
+                eprintln!("  ⚠ Warning: Failed to connect to QuestDB: {}", e);
+                eprintln!("  Continuing without database - candles will only be stored in memory");
+                None
+            }
+        };
+        
+        // Initialize Redis cache
+        println!("  Initializing Redis connection...");
+        let cache = match RedisCache::new().await {
+            Ok(c) => {
+                println!("  ✓ Redis connected");
+                Some(Arc::new(c))
+            }
+            Err(e) => {
+                eprintln!("  ⚠ Warning: Failed to connect to Redis: {}", e);
+                eprintln!("  Continuing without cache - will use database/memory only");
+                None
+            }
+        };
+        
         // Initialize Hyperliquid provider
         println!("  Initializing Hyperliquid WebSocket provider...");
-        let provider = HyperliquidMarketDataProvider::new();
+        let mut provider = HyperliquidMarketDataProvider::new();
+        
+        if let Some(ref db) = database {
+            provider = provider.with_database(db.clone());
+        }
+        if let Some(ref c) = cache {
+            provider = provider.with_cache(c.clone());
+        }
         
         // Wait for connection to establish (with timeout)
         println!("  Waiting for WebSocket connection...");
@@ -70,6 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         
         // Subscribe to symbols (will queue if not connected yet)
+        // This will also fetch historical candles if database is available
         for symbol in &symbols {
             match provider.subscribe(symbol).await {
                 Ok(()) => {
@@ -81,7 +120,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         
-        let runtime = SignalRuntime::with_provider(runtime_config, provider);
+        let mut runtime = SignalRuntime::with_provider(runtime_config, provider);
+        if let Some(ref db) = database {
+            runtime = runtime.with_database(db.clone());
+        }
 
         let runtime_handle = tokio::spawn(async move {
             if let Err(e) = runtime.run().await {

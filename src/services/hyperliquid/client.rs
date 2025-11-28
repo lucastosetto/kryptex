@@ -44,14 +44,16 @@ impl HyperliquidClient {
     pub async fn connect(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut current_delay = self.reconnect_delay;
 
+        let mut is_first_connection = true;
         loop {
             match self.try_connect().await {
                 Ok(()) => {
-                    // Only print once per connection, not on every reconnect
-                    if current_delay == self.reconnect_delay {
+                    // Only print once per initial connection, not on every reconnect
+                    if is_first_connection {
                         println!("Hyperliquid WebSocket connected");
+                        is_first_connection = false;
                     } else {
-                        println!("Hyperliquid WebSocket reconnected");
+                        println!("Hyperliquid WebSocket reconnected (delay was {:?})", current_delay);
                     }
                     current_delay = self.reconnect_delay;
                     
@@ -130,7 +132,8 @@ impl HyperliquidClient {
                     Ok(Message::Text(text)) => {
                         let _ = event_tx_reader.send(ClientEvent::Message(text));
                     }
-                    Ok(Message::Close(_)) => {
+                    Ok(Message::Close(frame)) => {
+                        println!("  [DEBUG] WebSocket received Close frame: {:?}", frame);
                         let _ = event_tx_reader.send(ClientEvent::Disconnected);
                         break;
                     }
@@ -141,14 +144,20 @@ impl HyperliquidClient {
                     Ok(Message::Pong(_)) => {
                         // Pong received, connection is alive
                     }
+                    Ok(Message::Binary(data)) => {
+                        println!("  [DEBUG] WebSocket received binary message ({} bytes)", data.len());
+                    }
+                    Ok(Message::Frame(_)) => {
+                        // Raw frame, should be handled by tungstenite
+                    }
                     Err(e) => {
-                        eprintln!("WebSocket read error: {}", e);
+                        eprintln!("  [ERROR] WebSocket read error: {}", e);
                         let _ = event_tx_reader.send(ClientEvent::Error(e.to_string()));
                         break;
                     }
-                    _ => {}
                 }
             }
+            println!("  [DEBUG] WebSocket reader task ended");
         });
 
         Ok(())
