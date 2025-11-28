@@ -1,3 +1,5 @@
+//! Unit tests for indicator parser
+
 use perptrix::indicators::parser::*;
 use std::collections::HashMap;
 
@@ -255,3 +257,4 @@ fn test_parse_volume_with_ma() {
     let result = parse_volume(1000.0, Some(-50.0), Some(20));
     assert!(result.is_err());
 }
+

@@ -1,6 +1,7 @@
 //! Hyperliquid WebSocket client
 
 use crate::config::get_hyperliquid_ws_url;
+use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -17,6 +18,26 @@ pub enum ClientEvent {
     Connected,
     Disconnected,
     Error(String),
+}
+
+#[async_trait]
+pub trait WebSocketClient: Send + Sync + 'static {
+    async fn connect(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+
+    async fn send(&self, message: Message) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+
+    async fn send_text(
+        &self,
+        text: String,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.send(Message::Text(text)).await
+    }
+
+    async fn receive(&self) -> Option<ClientEvent>;
+
+    async fn is_connected(&self) -> bool;
+
+    async fn wait_for_connection(&self, timeout: Duration) -> bool;
 }
 
 pub struct HyperliquidClient {
@@ -228,5 +249,119 @@ impl HyperliquidClient {
 impl Default for HyperliquidClient {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[async_trait]
+impl WebSocketClient for HyperliquidClient {
+    async fn connect(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        HyperliquidClient::connect(self).await
+    }
+
+    async fn send(&self, message: Message) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        HyperliquidClient::send(self, message).await
+    }
+
+    async fn send_text(
+        &self,
+        text: String,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        HyperliquidClient::send_text(self, text).await
+    }
+
+    async fn receive(&self) -> Option<ClientEvent> {
+        HyperliquidClient::receive(self).await
+    }
+
+    async fn is_connected(&self) -> bool {
+        HyperliquidClient::is_connected(self).await
+    }
+
+    async fn wait_for_connection(&self, timeout: Duration) -> bool {
+        HyperliquidClient::wait_for_connection(self, timeout).await
+    }
+}
+
+/// Simple in-memory WebSocket client mock for integration testing.
+pub struct MockWebSocketClient {
+    connected: Arc<RwLock<bool>>,
+    sent_messages: Arc<RwLock<Vec<Message>>>,
+    receiver: Arc<RwLock<Option<mpsc::UnboundedReceiver<ClientEvent>>>>,
+    sender: mpsc::UnboundedSender<ClientEvent>,
+}
+
+impl MockWebSocketClient {
+    pub fn new() -> Self {
+        let (tx, rx) = mpsc::unbounded_channel();
+        Self {
+            connected: Arc::new(RwLock::new(false)),
+            sent_messages: Arc::new(RwLock::new(Vec::new())),
+            receiver: Arc::new(RwLock::new(Some(rx))),
+            sender: tx,
+        }
+    }
+
+    /// Seed the mock with an event that will later be consumed.
+    pub async fn push_event(&self, event: ClientEvent) {
+        let _ = self.sender.send(event);
+    }
+
+    /// Retrieve a snapshot of messages that were sent through this client.
+    pub async fn sent_messages(&self) -> Vec<Message> {
+        self.sent_messages.read().await.clone()
+    }
+
+    /// Manually set the connection state.
+    pub async fn set_connected(&self, connected: bool) {
+        *self.connected.write().await = connected;
+    }
+}
+
+impl Default for MockWebSocketClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl WebSocketClient for MockWebSocketClient {
+    async fn connect(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        {
+            let mut guard = self.connected.write().await;
+            *guard = true;
+        }
+        let _ = self.sender.send(ClientEvent::Connected);
+        Ok(())
+    }
+
+    async fn send(&self, message: Message) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.sent_messages.write().await.push(message);
+        Ok(())
+    }
+
+    async fn receive(&self) -> Option<ClientEvent> {
+        let mut receiver_guard = self.receiver.write().await;
+        if let Some(mut receiver) = receiver_guard.take() {
+            let result = receiver.recv().await;
+            *receiver_guard = Some(receiver);
+            result
+        } else {
+            None
+        }
+    }
+
+    async fn is_connected(&self) -> bool {
+        *self.connected.read().await
+    }
+
+    async fn wait_for_connection(&self, timeout: Duration) -> bool {
+        let start = std::time::Instant::now();
+        while start.elapsed() < timeout {
+            if self.is_connected().await {
+                return true;
+            }
+            sleep(Duration::from_millis(50)).await;
+        }
+        false
     }
 }

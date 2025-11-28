@@ -30,7 +30,7 @@ fn test_standard_deviation() {
 fn test_true_range() {
     let tr = true_range(10.0, 8.0, 9.0);
     assert_eq!(tr, 2.0);
-    
+
     let tr2 = true_range(10.0, 8.0, 7.0);
     assert_eq!(tr2, 3.0);
 }

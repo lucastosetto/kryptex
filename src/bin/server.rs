@@ -117,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Wait for connection to establish (with timeout)
         info!("Waiting for WebSocket connection...");
-        let client = provider.client().clone();
+        let client = provider.client();
         if client.wait_for_connection(Duration::from_secs(10)).await {
             info!("WebSocket connected");
             metrics.websocket_connected.set(1.0);

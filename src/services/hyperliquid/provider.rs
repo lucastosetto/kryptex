@@ -13,13 +13,13 @@ use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, warn};
 
-use super::client::{ClientEvent, HyperliquidClient};
+use super::client::{ClientEvent, HyperliquidClient, WebSocketClient};
 use super::messages::{CandleData, CandleUpdate, RequestMessage, Subscription, WebSocketMessage};
 use super::rest::HyperliquidRestClient;
 use super::subscriptions::{SubscriptionKey, SubscriptionManager};
 
 pub struct HyperliquidMarketDataProvider {
-    pub(crate) client: Arc<HyperliquidClient>,
+    pub(crate) client: Arc<dyn WebSocketClient>,
     subscriptions: Arc<SubscriptionManager>,
     candles: Arc<RwLock<HashMap<String, VecDeque<Candle>>>>,
     latest_prices: Arc<RwLock<HashMap<String, f64>>>,
@@ -42,31 +42,30 @@ impl HyperliquidMarketDataProvider {
     }
 
     pub fn with_intervals(candle_intervals: Vec<String>) -> Self {
+        let websocket: Arc<dyn WebSocketClient> = Arc::new(HyperliquidClient::new());
+        let rest_client = Arc::new(HyperliquidRestClient::new());
+        Self::with_clients(websocket, rest_client, candle_intervals)
+    }
+
+    pub fn with_clients(
+        websocket_client: Arc<dyn WebSocketClient>,
+        rest_client: Arc<HyperliquidRestClient>,
+        candle_intervals: Vec<String>,
+    ) -> Self {
         let provider = Self {
-            client: Arc::new(HyperliquidClient::new()),
+            client: websocket_client,
             subscriptions: Arc::new(SubscriptionManager::new()),
             candles: Arc::new(RwLock::new(HashMap::new())),
             latest_prices: Arc::new(RwLock::new(HashMap::new())),
             candle_intervals: candle_intervals.clone(),
             pending_subscriptions: Arc::new(RwLock::new(Vec::new())),
-            rest_client: Arc::new(HyperliquidRestClient::new()),
+            rest_client,
             database: None,
             cache: None,
             funding_cache: Arc::new(RwLock::new(HashMap::new())),
         };
 
-        // Start connection task in background
-        let client_clone = provider.client.clone();
-        tokio::spawn(async move {
-            let _ = client_clone.connect().await;
-        });
-
-        // Start message handler task
-        let provider_clone = provider.clone_for_task();
-        tokio::spawn(async move {
-            provider_clone.handle_messages().await;
-        });
-
+        provider.spawn_background_tasks();
         provider
     }
 
@@ -83,6 +82,18 @@ impl HyperliquidMarketDataProvider {
             rest_client: self.rest_client.clone(),
             funding_cache: self.funding_cache.clone(),
         }
+    }
+
+    fn spawn_background_tasks(&self) {
+        let client_clone = self.client.clone();
+        tokio::spawn(async move {
+            let _ = client_clone.connect().await;
+        });
+
+        let provider_clone = self.clone_for_task();
+        tokio::spawn(async move {
+            provider_clone.handle_messages().await;
+        });
     }
 
     async fn subscribe_candle(
@@ -257,8 +268,8 @@ impl HyperliquidMarketDataProvider {
             .unwrap_or("1m")
     }
 
-    pub fn client(&self) -> &Arc<HyperliquidClient> {
-        &self.client
+    pub fn client(&self) -> Arc<dyn WebSocketClient> {
+        self.client.clone()
     }
 
     pub fn with_database(mut self, database: Arc<QuestDatabase>) -> Self {
@@ -274,7 +285,7 @@ impl HyperliquidMarketDataProvider {
 
 #[derive(Clone)]
 struct TaskProvider {
-    client: Arc<HyperliquidClient>,
+    client: Arc<dyn WebSocketClient>,
     #[allow(dead_code)] // Kept for future resubscription functionality
     subscriptions: Arc<SubscriptionManager>,
     candles: Arc<RwLock<HashMap<String, VecDeque<Candle>>>>,

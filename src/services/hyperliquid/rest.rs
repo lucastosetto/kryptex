@@ -61,9 +61,13 @@ pub struct HyperliquidRestClient {
 
 impl HyperliquidRestClient {
     pub fn new() -> Self {
+        Self::with_client(config::get_hyperliquid_rest_url(), reqwest::Client::new())
+    }
+
+    pub fn with_client(base_url: impl Into<String>, client: reqwest::Client) -> Self {
         Self {
-            base_url: config::get_hyperliquid_rest_url(),
-            client: reqwest::Client::new(),
+            base_url: base_url.into(),
+            client,
         }
     }
 

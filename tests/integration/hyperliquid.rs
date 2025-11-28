@@ -1,99 +1,63 @@
-//! Integration tests for Hyperliquid WebSocket integration
+//! Integration tests for the Hyperliquid-powered HTTP stack.
+mod test_utils;
 
-use perptrix::config::{get_environment, get_hyperliquid_ws_url};
-use perptrix::services::hyperliquid::HyperliquidMarketDataProvider;
 use perptrix::services::market_data::MarketDataProvider;
-use std::time::Duration;
-use tokio::time::sleep;
+use serde_json::Value;
+use tokio_tungstenite::tungstenite::Message;
+
+use test_utils::TestApp;
 
 #[tokio::test]
-async fn test_environment_configuration() {
-    // Test that environment configuration works
-    let env = get_environment();
-    assert!(env == "production" || env == "sandbox" || env == "testnet");
-    
-    let url = get_hyperliquid_ws_url();
-    assert!(url.contains("hyperliquid"));
-    assert!(url.starts_with("wss://"));
+async fn health_endpoint_reports_healthy_status() {
+    let app = TestApp::new().await;
+    let response = app.server.get("/health").await;
+    assert_eq!(response.status_code(), 200);
+
+    let body: Value = response.json();
+    assert_eq!(body["status"], "healthy");
+    assert!(body["uptime_seconds"].as_u64().is_some());
+    assert_eq!(body["service"], "perptrix-signal-engine");
 }
 
 #[tokio::test]
-async fn test_hyperliquid_provider_creation() {
-    // Test that provider can be created
-    let provider = HyperliquidMarketDataProvider::new();
-    
-    // Give it time to connect
-    sleep(Duration::from_secs(2)).await;
-    
-    // Test that we can call methods (even if they return empty initially)
-    let candles = provider.get_candles("BTC", 10).await;
-    assert!(candles.is_ok());
-    
-    let price = provider.get_latest_price("BTC").await;
-    assert!(price.is_ok());
+async fn metrics_endpoint_exposes_prometheus_metrics() {
+    let app = TestApp::new().await;
+    let response = app.server.get("/metrics").await;
+    assert_eq!(response.status_code(), 200);
+
+    let body = response.text();
+    assert!(
+        body.contains("http_requests_total"),
+        "Expected Prometheus metrics output"
+    );
 }
 
 #[tokio::test]
-async fn test_hyperliquid_subscribe() {
-    let provider = HyperliquidMarketDataProvider::new();
-    
-    // Give it time to connect
-    sleep(Duration::from_secs(2)).await;
-    
-    // Test subscription
-    let result = provider.subscribe("BTC").await;
-    assert!(result.is_ok());
-    
-    // Wait a bit for data to arrive
-    sleep(Duration::from_secs(3)).await;
-    
-    // Try to get candles (may be empty if connection not established yet)
-    let candles = provider.get_candles("BTC", 10).await;
-    assert!(candles.is_ok());
-}
+async fn subscriptions_use_mocked_dependencies() {
+    let app = TestApp::new().await;
 
-#[tokio::test]
-async fn test_hyperliquid_multiple_symbols() {
-    let provider = HyperliquidMarketDataProvider::new();
-    
-    // Give it time to connect
-    sleep(Duration::from_secs(2)).await;
-    
-    // Subscribe to multiple symbols
-    assert!(provider.subscribe("BTC").await.is_ok());
-    assert!(provider.subscribe("ETH").await.is_ok());
-    
-    // Wait for data
-    sleep(Duration::from_secs(3)).await;
-    
-    // Check both symbols
-    let btc_candles = provider.get_candles("BTC", 10).await;
-    assert!(btc_candles.is_ok());
-    
-    let eth_candles = provider.get_candles("ETH", 10).await;
-    assert!(eth_candles.is_ok());
-}
+    app.provider.subscribe("BTC").await.expect("subscribe succeeds");
 
-#[tokio::test]
-async fn test_hyperliquid_latest_price() {
-    let provider = HyperliquidMarketDataProvider::new();
-    
-    // Give it time to connect
-    sleep(Duration::from_secs(2)).await;
-    
-    // Subscribe first
-    assert!(provider.subscribe("BTC").await.is_ok());
-    
-    // Wait for price updates
-    sleep(Duration::from_secs(3)).await;
-    
-    // Get latest price
-    let price = provider.get_latest_price("BTC").await;
-    assert!(price.is_ok());
-    
-    // Price should be positive if we got data
-    let price_value = price.unwrap();
-    // Note: price might be 0.0 if connection not established, so we just check it doesn't panic
-    assert!(price_value >= 0.0);
+    let requests = app
+        .hyperliquid_rest
+        .received_requests()
+        .await
+        .expect("wiremock requests");
+    assert!(
+        requests.iter().any(|req| {
+            let body = String::from_utf8_lossy(&req.body);
+            body.contains("candleSnapshot")
+        }),
+        "Expected candleSnapshot request routed through wiremock"
+    );
+
+    let sent_messages = app.websocket.sent_messages().await;
+    assert!(
+        sent_messages.iter().any(|message| match message {
+            Message::Text(payload) => payload.contains("subscribe"),
+            _ => false,
+        }),
+        "Expected subscription payload sent through mocked WebSocket"
+    );
 }
 

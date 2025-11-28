@@ -1,21 +1,24 @@
 //! Unit tests for signal engine
 
-use perptrix::signals::engine::SignalEngine;
-use perptrix::models::indicators::Candle;
 use chrono::Utc;
+use perptrix::models::indicators::Candle;
+use perptrix::signals::engine::SignalEngine;
 
 fn create_uptrend_candles(count: usize) -> Vec<Candle> {
     let mut candles = Vec::new();
     for i in 0..count {
         let price = 100.0 + (i as f64 * 0.5);
-        candles.push(Candle::new(
+        let candle = Candle::new(
             price,
             price + 0.3,
             price - 0.2,
             price + 0.1,
             1000.0,
             Utc::now(),
-        ));
+        )
+        .with_open_interest(10_000.0 + (i as f64 * 20.0))
+        .with_funding_rate(0.0001);
+        candles.push(candle);
     }
     candles
 }
