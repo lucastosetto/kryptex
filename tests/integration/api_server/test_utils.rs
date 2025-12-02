@@ -21,6 +21,7 @@ impl TestApiServer {
             health: Arc::new(RwLock::new(HealthStatus::default())),
             metrics: metrics.clone(),
             start_time: Arc::new(Instant::now()),
+            database: None,
         };
 
         let app = create_router(state);

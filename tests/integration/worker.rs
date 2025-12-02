@@ -81,6 +81,7 @@ async fn worker_processes_store_signal_job() {
     let job = StoreSignalJob {
         symbol: "BTC".to_string(),
         signal,
+        strategy_id: 1,
     };
     
     let mut storage = (*worker.store_storage).clone();

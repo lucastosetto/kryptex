@@ -1,5 +1,5 @@
 //! Strategy definitions that consume indicators and emit intents.
 
-pub mod swing {
-    //! Swing trading strategy placeholder.
-}
+pub mod evaluator;
+
+pub use evaluator::{IndicatorValues, StrategyEvaluator};

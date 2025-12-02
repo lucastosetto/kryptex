@@ -22,6 +22,7 @@ pub struct EvaluateSignalJob {
 pub struct StoreSignalJob {
     pub symbol: String,
     pub signal: SignalOutput,
+    pub strategy_id: i64,
 }
 
 

@@ -13,6 +13,7 @@ async fn test_health_check() {
         health: Arc::new(RwLock::new(HealthStatus::default())),
         metrics: Arc::new(Metrics::default()),
         start_time: Arc::new(Instant::now()),
+        database: None,
     };
     let result = health_check(State(state)).await;
     assert!(result.is_ok());

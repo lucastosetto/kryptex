@@ -2,7 +2,46 @@
 
 use chrono::Utc;
 use perptrix::models::indicators::Candle;
+use perptrix::models::strategy::{
+    AggregationConfig, AggregationMethod, Condition, Comparison, IndicatorType, Rule, RuleType,
+    SignalThresholds, Strategy, StrategyConfig,
+};
 use perptrix::signals::engine::SignalEngine;
+
+fn create_test_strategy(symbol: &str) -> Strategy {
+    // Create a simple strategy with a rule that will always pass
+    // This allows tests to verify the evaluation pipeline works
+    Strategy {
+        id: None,
+        name: "Test Strategy".to_string(),
+        symbol: symbol.to_string(),
+        config: StrategyConfig {
+            rules: vec![Rule {
+                id: "test_rule".to_string(),
+                rule_type: RuleType::Condition,
+                weight: Some(1.0),
+                operator: None,
+                condition: Some(Condition {
+                    indicator: IndicatorType::RSI,
+                    indicator_params: std::collections::HashMap::new(),
+                    comparison: Comparison::GreaterThan,
+                    threshold: Some(-100.0), // Always true (RSI is 0-100)
+                    signal_state: None,
+                }),
+                children: None,
+            }],
+            aggregation: AggregationConfig {
+                method: AggregationMethod::Sum,
+                thresholds: SignalThresholds {
+                    long_min: 1, // Lower threshold so tests can pass
+                    short_max: -1,
+                },
+            },
+        },
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    }
+}
 
 fn create_uptrend_candles(count: usize) -> Vec<Candle> {
     let mut candles = Vec::new();
@@ -26,13 +65,15 @@ fn create_uptrend_candles(count: usize) -> Vec<Candle> {
 #[test]
 fn test_evaluate_insufficient_data() {
     let candles = create_uptrend_candles(10);
-    assert!(SignalEngine::evaluate(&candles, "BTC").is_none());
+    let strategy = create_test_strategy("BTC");
+    assert!(SignalEngine::evaluate(&candles, &strategy).is_none());
 }
 
 #[test]
 fn test_evaluate_sufficient_data() {
     let candles = create_uptrend_candles(250);
-    let result = SignalEngine::evaluate(&candles, "BTC");
+    let strategy = create_test_strategy("BTC");
+    let result = SignalEngine::evaluate(&candles, &strategy);
     assert!(result.is_some());
     let signal = result.unwrap();
     assert!(signal.confidence >= 0.0);

@@ -3,7 +3,9 @@
 use crate::config;
 use crate::models::indicators::Candle;
 use crate::models::signal::{SignalDirection, SignalOutput};
+use crate::models::strategy::Strategy;
 use chrono::{DateTime, Utc};
+use serde_json;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_postgres::{Client, NoTls};
@@ -70,12 +72,33 @@ impl QuestDatabase {
                 ))) as Box<dyn std::error::Error + Send + Sync>
             })?;
 
+            // Create strategies table
+            c.execute(
+                "CREATE TABLE IF NOT EXISTS strategies (
+                    id LONG,
+                    name STRING,
+                    symbol SYMBOL,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    config_json STRING
+                )",
+                &[],
+            )
+            .await
+            .map_err(|e| {
+                Box::new(std::io::Error::other(format!(
+                    "Failed to create strategies table: {}",
+                    e
+                ))) as Box<dyn std::error::Error + Send + Sync>
+            })?;
+
             // Create signals table
             c.execute(
                 "CREATE TABLE IF NOT EXISTS signals (
                     timestamp TIMESTAMP,
                     id LONG,
                     symbol SYMBOL,
+                    strategy_id LONG,
                     direction SYMBOL,
                     confidence DOUBLE,
                     sl_pct DOUBLE,
@@ -221,6 +244,7 @@ impl QuestDatabase {
     pub async fn store_signal(
         &self,
         signal: &SignalOutput,
+        strategy_id: i64,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let client = self.client.read().await;
         if let Some(ref c) = *client {
@@ -243,12 +267,13 @@ impl QuestDatabase {
             let timestamp_naive = signal.timestamp.naive_utc();
 
             c.execute(
-                "INSERT INTO signals (timestamp, id, symbol, direction, confidence, sl_pct, tp_pct, price, reasons_json)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                "INSERT INTO signals (timestamp, id, symbol, strategy_id, direction, confidence, sl_pct, tp_pct, price, reasons_json)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
                 &[
                     &timestamp_naive,
                     &id,
                     &signal.symbol,
+                    &strategy_id,
                     &direction_str,
                     &signal.confidence,
                     &signal.recommended_sl_pct,
@@ -365,5 +390,269 @@ impl QuestDatabase {
     pub async fn is_available(&self) -> bool {
         let client = self.client.read().await;
         client.is_some()
+    }
+
+    /// Create a new strategy
+    pub async fn create_strategy(
+        &self,
+        strategy: &Strategy,
+    ) -> Result<i64, Box<dyn std::error::Error + Send + Sync>> {
+        let client = self.client.read().await;
+        if let Some(ref c) = *client {
+            let config_json = serde_json::to_string(&strategy.config).map_err(|e| {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Failed to serialize strategy config: {}", e),
+                )) as Box<dyn std::error::Error + Send + Sync>
+            })?;
+
+            let id = strategy.created_at.timestamp_millis();
+            let created_at_naive = strategy.created_at.naive_utc();
+            let updated_at_naive = strategy.updated_at.naive_utc();
+
+            c.execute(
+                "INSERT INTO strategies (id, name, symbol, created_at, updated_at, config_json)
+                 VALUES ($1, $2, $3, $4, $5, $6)",
+                &[
+                    &id,
+                    &strategy.name,
+                    &strategy.symbol,
+                    &created_at_naive,
+                    &updated_at_naive,
+                    &config_json,
+                ],
+            )
+            .await
+            .map_err(|e| {
+                Box::new(std::io::Error::other(format!(
+                    "Failed to create strategy: {}",
+                    e
+                ))) as Box<dyn std::error::Error + Send + Sync>
+            })?;
+
+            Ok(id)
+        } else {
+            Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "Database connection not available",
+            )))
+        }
+    }
+
+    /// Get a strategy by ID
+    pub async fn get_strategy(
+        &self,
+        id: i64,
+    ) -> Result<Strategy, Box<dyn std::error::Error + Send + Sync>> {
+        let client = self.client.read().await;
+        if let Some(ref c) = *client {
+            let rows = c
+                .query(
+                    "SELECT id, name, symbol, created_at, updated_at, config_json
+                     FROM strategies
+                     WHERE id = $1",
+                    &[&id],
+                )
+                .await
+                .map_err(|e| {
+                    Box::new(std::io::Error::other(format!(
+                        "Failed to query strategy: {}",
+                        e
+                    ))) as Box<dyn std::error::Error + Send + Sync>
+                })?;
+
+            if rows.is_empty() {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Strategy with id {} not found", id),
+                )));
+            }
+
+            let row = &rows[0];
+            let id: i64 = row.get(0);
+            let name: String = row.get(1);
+            let symbol: String = row.get(2);
+            let created_at_naive: chrono::NaiveDateTime = row.get(3);
+            let updated_at_naive: chrono::NaiveDateTime = row.get(4);
+            let config_json: String = row.get(5);
+
+            let created_at = DateTime::from_naive_utc_and_offset(created_at_naive, Utc);
+            let updated_at = DateTime::from_naive_utc_and_offset(updated_at_naive, Utc);
+
+            let config: crate::models::strategy::StrategyConfig =
+                serde_json::from_str(&config_json).map_err(|e| {
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Failed to deserialize strategy config: {}", e),
+                    )) as Box<dyn std::error::Error + Send + Sync>
+                })?;
+
+            Ok(Strategy {
+                id: Some(id),
+                name,
+                symbol,
+                config,
+                created_at,
+                updated_at,
+            })
+        } else {
+            Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "Database connection not available",
+            )))
+        }
+    }
+
+    /// Get all strategies, optionally filtered by symbol
+    pub async fn get_strategies(
+        &self,
+        symbol: Option<&str>,
+    ) -> Result<Vec<Strategy>, Box<dyn std::error::Error + Send + Sync>> {
+        let client = self.client.read().await;
+        if let Some(ref c) = *client {
+            let query = if let Some(_sym) = symbol {
+                "SELECT id, name, symbol, created_at, updated_at, config_json
+                 FROM strategies
+                 WHERE symbol = $1
+                 ORDER BY created_at DESC"
+            } else {
+                "SELECT id, name, symbol, created_at, updated_at, config_json
+                 FROM strategies
+                 ORDER BY created_at DESC"
+            };
+
+            let rows = if let Some(sym) = symbol {
+                c.query(query, &[&sym]).await
+            } else {
+                c.query(query, &[]).await
+            }
+            .map_err(|e| {
+                Box::new(std::io::Error::other(format!(
+                    "Failed to query strategies: {}",
+                    e
+                ))) as Box<dyn std::error::Error + Send + Sync>
+            })?;
+
+            let mut strategies = Vec::new();
+            for row in rows {
+                let id: i64 = row.get(0);
+                let name: String = row.get(1);
+                let symbol: String = row.get(2);
+                let created_at_naive: chrono::NaiveDateTime = row.get(3);
+                let updated_at_naive: chrono::NaiveDateTime = row.get(4);
+                let config_json: String = row.get(5);
+
+                let created_at = DateTime::from_naive_utc_and_offset(created_at_naive, Utc);
+                let updated_at = DateTime::from_naive_utc_and_offset(updated_at_naive, Utc);
+
+                let config: crate::models::strategy::StrategyConfig =
+                    serde_json::from_str(&config_json).map_err(|e| {
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Failed to deserialize strategy config: {}", e),
+                        )) as Box<dyn std::error::Error + Send + Sync>
+                    })?;
+
+                strategies.push(Strategy {
+                    id: Some(id),
+                    name,
+                    symbol,
+                    config,
+                    created_at,
+                    updated_at,
+                });
+            }
+
+            Ok(strategies)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Update a strategy
+    pub async fn update_strategy(
+        &self,
+        id: i64,
+        strategy: &Strategy,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let client = self.client.read().await;
+        if let Some(ref c) = *client {
+            let config_json = serde_json::to_string(&strategy.config).map_err(|e| {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Failed to serialize strategy config: {}", e),
+                )) as Box<dyn std::error::Error + Send + Sync>
+            })?;
+
+            let updated_at_naive = strategy.updated_at.naive_utc();
+
+            let rows_affected = c
+                .execute(
+                    "UPDATE strategies
+                     SET name = $1, symbol = $2, updated_at = $3, config_json = $4
+                     WHERE id = $5",
+                    &[
+                        &strategy.name,
+                        &strategy.symbol,
+                        &updated_at_naive,
+                        &config_json,
+                        &id,
+                    ],
+                )
+                .await
+                .map_err(|e| {
+                    Box::new(std::io::Error::other(format!(
+                        "Failed to update strategy: {}",
+                        e
+                    ))) as Box<dyn std::error::Error + Send + Sync>
+                })?;
+
+            if rows_affected == 0 {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Strategy with id {} not found", id),
+                )));
+            }
+
+            Ok(())
+        } else {
+            Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "Database connection not available",
+            )))
+        }
+    }
+
+    /// Delete a strategy
+    pub async fn delete_strategy(
+        &self,
+        id: i64,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let client = self.client.read().await;
+        if let Some(ref c) = *client {
+            let rows_affected = c
+                .execute("DELETE FROM strategies WHERE id = $1", &[&id])
+                .await
+                .map_err(|e| {
+                    Box::new(std::io::Error::other(format!(
+                        "Failed to delete strategy: {}",
+                        e
+                    ))) as Box<dyn std::error::Error + Send + Sync>
+                })?;
+
+            if rows_affected == 0 {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Strategy with id {} not found", id),
+                )));
+            }
+
+            Ok(())
+        } else {
+            Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "Database connection not available",
+            )))
+        }
     }
 }
