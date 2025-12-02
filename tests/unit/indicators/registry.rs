@@ -40,3 +40,6 @@ fn test_all_categories() {
     assert!(categories.contains(&IndicatorCategory::Perp));
 }
 
+
+
+

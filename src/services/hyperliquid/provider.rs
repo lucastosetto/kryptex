@@ -750,6 +750,17 @@ impl MarketDataProvider for HyperliquidMarketDataProvider {
     }
 }
 
+impl HyperliquidMarketDataProvider {
+    /// Subscribe to a symbol for all configured intervals (public wrapper)
+    pub async fn subscribe(
+        &self,
+        symbol: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Delegate to the trait method
+        <Self as MarketDataProvider>::subscribe(self, symbol).await
+    }
+}
+
 impl Default for HyperliquidMarketDataProvider {
     fn default() -> Self {
         Self::new()

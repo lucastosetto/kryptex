@@ -40,9 +40,11 @@ Perptrix implements a signal engine based on the [RFC](https://github.com/lucast
 - Multi-interval support (1m, 5m, 15m, 1h)
 
 **Cloud Runtime & Observability:**
-- HTTP server with health, metrics, and tracing middleware
-- Periodic signal evaluation runtime with real market data
-- Hyperliquid market data provider with WebSocket and REST integration
+- Separated services: API server, WebSocket service, and workers
+- Production-ready job queue system using Apalis (Redis backend)
+- HTTP API server with health, metrics, and tracing middleware
+- WebSocket service for real-time market data ingestion
+- Background workers for signal evaluation (horizontally scalable)
 - Prometheus metrics + OpenTelemetry tracing pipelines wired to Grafana/Tempo
 - Environment-based configuration (sandbox/production)
 
@@ -65,47 +67,82 @@ Perptrix implements a signal engine based on the [RFC](https://github.com/lucast
 └───────────┬─────────┘   │
             │             │
             ▼             │
-    ┌───────────────┐     │
-    │ Market Data   │     │
-    │   Provider    │     │
-    └───────┬───────┘     │
+┌─────────────────────┐   │
+│ WebSocket Service   │   │
+│ (Singleton)         │   │
+│ - Maintains WS conn │   │
+│ - Subscribes symbols│   │
+└───────────┬─────────┘   │
             │             │
             ├─────────────┘
-            │ Candles
+            │ Writes
             ▼
     ┌───────────────┐
     │   QuestDB     │ (Persistent Storage)
-    └───────────────┘
+    └───────┬───────┘
             │
             ├──────────────┐
             │              │
             ▼              ▼
     ┌───────────────┐  ┌───────────┐
     │     Redis     │  │ In-Memory │
-    │    (Cache)    │  │   Buffer  │
+    │ (Cache/Queue) │  │   Buffer  │
     └───────┬───────┘  └───────┬───┘
             │                  │
-            └──────────┬───────┘
-                       │
-                       ▼
-              ┌──────────────────┐
-              │ Indicator Engine │
-              └────────┬─────────┘
-                       │ Signals
-                       ▼
-            ┌─────────────────────────┐
-            │ Signal Interpreter      │
-            │ + SL/TP Recommendations │
-            └──────────┬──────────────┘
-                       │
-                       ▼
-            ┌─────────────────────────┐
-            │   QuestDB (Signals)     │
-            └─────────────────────────┘
-                       │
-                       ▼
-            (Future) Trade Executor
+            │                  │
+            ├──────────────────┴──────────┐
+            │                             │
+            ▼                             ▼
+┌─────────────────────┐      ┌─────────────────────┐
+│   API Server        │      │   Workers (N)       │
+│ (Horizontally       │      │ (Horizontally       │
+│  Scalable)          │      │  Scalable)          │
+│ - Health/Metrics    │      │ - FetchCandlesJob   │
+│ - Business Logic    │      │ - EvaluateSignalJob │
+│ - Reads from Redis  │      │ - StoreSignalJob    │
+│   /QuestDB          │      │ - Reads from Redis  │
+└─────────────────────┘      │   /QuestDB          │
+                             └─────────┬───────-───┘
+                                        │
+                                        ▼
+                              ┌──────────────────┐
+                              │ Indicator Engine │
+                              └────────┬─────────┘
+                                       │ Signals
+                                       ▼
+                            ┌─────────────────────────┐
+                            │ Signal Interpreter      │
+                            │ + SL/TP Recommendations │
+                            └──────────┬──────────────┘
+                                       │
+                                       ▼
+                            ┌─────────────────────────┐
+                            │   QuestDB (Signals)     │
+                            └─────────────────────────┘
+                                       │
+                                       ▼
+                            (Future) Trade Executor
 ```
+
+### Service Architecture
+
+The system consists of three independent services:
+
+1. **WebSocket Service** (Singleton)
+   - Maintains long-lived WebSocket connection to market data provider
+   - Receives real-time updates and writes to Redis/QuestDB
+   - Should run as a single instance
+
+2. **API Server** (Horizontally Scalable)
+   - HTTP API with health check, metrics, and business logic endpoints
+   - Stateless - can run multiple instances behind a load balancer
+   - Reads from Redis/QuestDB
+
+3. **Workers** (Horizontally Scalable)
+   - Process signal evaluation jobs from Redis queue
+   - Three job types: FetchCandles → EvaluateSignal → StoreSignal
+   - Can run multiple instances for parallel processing
+   - Reads from Redis/QuestDB (never creates connections)
 
 ## 📁 Project Structure
 
@@ -113,37 +150,48 @@ Perptrix implements a signal engine based on the [RFC](https://github.com/lucast
 perptrix/
   config.example.json   # Example configuration file with category weights
   src/
+    bin/                # Executable binaries
+      api-server.rs     # HTTP API server (stateless, scalable)
+      websocket-service.rs  # WebSocket data ingestion (singleton)
+      worker.rs         # Job processing workers (scalable)
     common/             # Shared helpers (math utilities: EMA, SMA, std dev)
     config/             # Configuration management (JSON-based config)
-    core/               # Cloud runtime (HTTP server, periodic task runner)
-    ├── http.rs         # HTTP endpoints (health check)
-    └── runtime.rs      # Periodic signal evaluation
-  db/                   # Persistence adapters (QuestDB)
-  cache/                # Caching layer (Redis)
-  evaluation/           # Signal scoring and validation utilities
-  engine/               # Signal aggregation and scoring
-    ├── aggregator.rs   # Category-based signal aggregation (integer scoring)
-    └── signal.rs       # Trading signal types and market bias
-  indicators/           # Indicator implementations organized by category
-    ├── momentum/       # MACD, RSI
-    ├── trend/          # EMA, SuperTrend
-    ├── volatility/     # Bollinger Bands, ATR
-    ├── volume/         # OBV, Volume Profile (beyond RFC Phase 2)
-    ├── perp/           # Funding Rate, Open Interest (beyond RFC Phase 2)
-    └── registry.rs     # Indicator registry and category system
-  models/               # Shared DTOs (Candle, IndicatorSet, SignalOutput)
-  services/             # Market data provider interface
-    hyperliquid/        # Hyperliquid WebSocket and REST clients
-      client.rs         # WebSocket client with reconnection logic
-      messages.rs       # WebSocket message types
-      provider.rs       # Market data provider implementation
-      rest.rs           # REST API client for historical data
-      subscriptions.rs  # Subscription management
-  signals/              # Signal evaluation engine
-    ├── decision.rs     # Direction thresholds and SL/TP logic
-    └── engine.rs       # Main signal evaluation orchestrator
-  strategies/           # Strategy definitions (placeholder)
-  lib.rs                # Crate root exposing layered modules
+    core/               # Core runtime components
+      ├── http.rs       # HTTP endpoints (health check, metrics)
+      ├── runtime.rs    # Apalis worker setup
+      └── scheduler.rs  # Cron-based job scheduler
+    db/                 # Persistence adapters (QuestDB)
+    cache/              # Caching layer (Redis)
+    jobs/               # Job queue system
+      ├── context.rs    # Job context for dependency injection
+      ├── handlers.rs   # Job handlers (fetch, evaluate, store)
+      ├── types.rs      # Job type definitions
+      └── workflow.rs   # Workflow utilities
+    evaluation/         # Signal scoring and validation utilities
+    engine/             # Signal aggregation and scoring
+      ├── aggregator.rs # Category-based signal aggregation (integer scoring)
+      └── signal.rs     # Trading signal types and market bias
+    indicators/         # Indicator implementations organized by category
+      ├── momentum/     # MACD, RSI
+      ├── trend/        # EMA, SuperTrend
+      ├── volatility/   # Bollinger Bands, ATR
+      ├── volume/       # OBV, Volume Profile (beyond RFC Phase 2)
+      ├── perp/         # Funding Rate, Open Interest (beyond RFC Phase 2)
+      └── registry.rs   # Indicator registry and category system
+    models/             # Shared DTOs (Candle, IndicatorSet, SignalOutput)
+    services/           # Market data provider interface
+      hyperliquid/      # Hyperliquid WebSocket and REST clients
+        client.rs       # WebSocket client with reconnection logic
+        messages.rs     # WebSocket message types
+        provider.rs     # Market data provider implementation
+        rest.rs         # REST API client for historical data
+        subscriptions.rs # Subscription management
+      websocket/        # WebSocket service management
+    signals/            # Signal evaluation engine
+      ├── decision.rs   # Direction thresholds and SL/TP logic
+      └── engine.rs     # Main signal evaluation orchestrator
+    strategies/         # Strategy definitions (placeholder)
+    lib.rs              # Crate root exposing layered modules
 ```
 
 ## 🔧 Installation
@@ -168,7 +216,13 @@ cargo test
 
 ### Local Development Setup
 
-Perptrix uses QuestDB for persistent storage and Redis for caching. Start the required services using Docker Compose:
+Perptrix uses Docker Compose to run all services together. This includes:
+- Infrastructure services (QuestDB, Redis, Prometheus, Grafana, Tempo)
+- Perptrix services (WebSocket service, API server, Workers)
+
+#### Quick Start
+
+Start all services:
 
 ```bash
 docker-compose up -d
@@ -180,25 +234,127 @@ This will start:
 - **Prometheus** on port 9090 (metrics collection)
 - **Grafana** on port 3000 (monitoring dashboard)
 - **Grafana Tempo** on ports 4318 (OTLP HTTP) and 3200 (query API) (trace storage)
+- **Perptrix WebSocket Service** (maintains market data connection)
+- **Perptrix API Server** on port 8080 (HTTP API)
+- **Perptrix Worker** (processes signal evaluation jobs)
 
-To stop the services:
+#### Environment Variables
+
+You can customize the services using environment variables:
+
+```bash
+# Set symbols to monitor
+SYMBOLS=BTC,ETH,SOL
+
+# Set evaluation interval (seconds)
+EVAL_INTERVAL_SECONDS=60
+
+# Set API port
+API_PORT=8080
+
+# Set worker concurrency
+WORKER_CONCURRENCY=5
+
+# Use sandbox environment
+PERPTRIX_ENV=sandbox
+
+# Start with custom configuration
+SYMBOLS=BTC,ETH EVAL_INTERVAL_SECONDS=30 docker-compose up -d
+```
+
+#### Scaling Workers
+
+To run multiple worker instances:
+
+```bash
+docker-compose up -d --scale worker=3
+```
+
+This will start 3 worker containers for parallel job processing.
+
+#### Viewing Logs
+
+View logs for all services:
+
+```bash
+docker-compose logs -f
+```
+
+View logs for a specific service:
+
+```bash
+docker-compose logs -f websocket-service
+docker-compose logs -f api-server
+docker-compose logs -f worker
+```
+
+#### Stopping Services
+
+Stop all services:
 
 ```bash
 docker-compose down
 ```
 
-To view QuestDB's web console, visit: http://localhost:9000
+Stop and remove volumes (clears all data):
 
-To access monitoring dashboards:
+```bash
+docker-compose down -v
+```
+
+#### Accessing Services
+
+- **QuestDB Console**: http://localhost:9000
+- **API Server**: http://localhost:8080
+  - Health: http://localhost:8080/health
+  - Metrics: http://localhost:8080/metrics
 - **Grafana**: http://localhost:3000 (default credentials: admin/admin)
 - **Prometheus**: http://localhost:9090
 - **Tempo**: http://localhost:3200
 
+#### Building Images
+
+To rebuild the Perptrix services after code changes:
+
+```bash
+docker-compose build
+docker-compose up -d
+```
+
+Or rebuild and restart in one command:
+
+```bash
+docker-compose up -d --build
+```
+
+#### Building Individual Services
+
+You can also build individual Docker images using the `BINARY` build argument:
+
+```bash
+# Build API server
+docker build --build-arg BINARY=api-server -t perptrix-api-server .
+
+# Build WebSocket service
+docker build --build-arg BINARY=websocket-service -t perptrix-websocket-service .
+
+# Build Worker
+docker build --build-arg BINARY=worker -t perptrix-worker .
+```
+
+Each Dockerfile build creates a single binary image, making builds faster and images smaller.
+
 ## 🚀 Usage
 
-### Running the Server
+### Service Architecture
 
-**Setup:**
+Perptrix consists of three independent services that can be run separately:
+
+1. **WebSocket Service** - Maintains connection to market data provider (singleton)
+2. **API Server** - HTTP API with health, metrics, and business logic (horizontally scalable)
+3. **Workers** - Process signal evaluation jobs from queue (horizontally scalable)
+
+### Setup
 
 1. Copy the environment template to create your local `.env` file:
    ```bash
@@ -207,17 +363,75 @@ To access monitoring dashboards:
 
 2. Edit `.env` to adjust configuration values as needed for your local setup.
 
-3. Start the server:
-   ```bash
-   cargo run --bin server
-   ```
+**Note:** The `.env` file is gitignored and will not be committed. Use `.env.example` as a template. All services automatically load `.env` on startup via [`dotenvy`](https://crates.io/crates/dotenvy).
 
-**Note:** The `.env` file is gitignored and will not be committed. Use `.env.example` as a template. The server automatically loads `.env` on startup via [`dotenvy`](https://crates.io/crates/dotenvy).
+### Running Services
 
-**Environment Variables:**
-- `PORT` - HTTP server port (default: 8080)
-- `EVAL_INTERVAL_SECONDS` - Signal evaluation interval in seconds (default: 0 = disabled)
-- `SYMBOLS` - Comma-separated list of symbols to evaluate (required when `EVAL_INTERVAL_SECONDS > 0`)
+#### 1. WebSocket Service (Required - Run First)
+
+The WebSocket service maintains the connection to the market data provider and writes data to Redis/QuestDB. **Run this as a singleton (one instance)**.
+
+```bash
+# Basic usage
+cargo run --bin websocket-service
+
+# With symbols to subscribe
+SYMBOLS=BTC,ETH cargo run --bin websocket-service
+
+# Sandbox environment
+PERPTRIX_ENV=sandbox SYMBOLS=BTC cargo run --bin websocket-service
+```
+
+#### 2. API Server (Optional - Can Run Multiple Instances)
+
+The API server provides HTTP endpoints for health checks, metrics, and business logic. **This is stateless and can be horizontally scaled**.
+
+```bash
+# Basic usage (default port 8080)
+cargo run --bin api-server
+
+# Custom port
+PORT=3000 cargo run --bin api-server
+
+# Multiple instances (different ports)
+PORT=8080 cargo run --bin api-server &
+PORT=8081 cargo run --bin api-server &
+```
+
+#### 3. Workers (Required - Can Run Multiple Instances)
+
+Workers process signal evaluation jobs from the Redis queue. **Can run multiple instances for parallel processing**.
+
+```bash
+# Basic usage
+EVAL_INTERVAL_SECONDS=60 SYMBOLS=BTC cargo run --bin worker
+
+# Custom concurrency
+WORKER_CONCURRENCY=10 EVAL_INTERVAL_SECONDS=60 SYMBOLS=BTC,ETH cargo run --bin worker
+
+# Multiple worker instances
+EVAL_INTERVAL_SECONDS=60 SYMBOLS=BTC cargo run --bin worker &
+EVAL_INTERVAL_SECONDS=60 SYMBOLS=BTC cargo run --bin worker &
+```
+
+### Complete Example
+
+For a full setup, run all three services:
+
+```bash
+# Terminal 1: WebSocket Service (singleton)
+SYMBOLS=BTC,ETH cargo run --bin websocket-service
+
+# Terminal 2: API Server
+PORT=8080 cargo run --bin api-server
+
+# Terminal 3: Worker (can run multiple)
+EVAL_INTERVAL_SECONDS=60 SYMBOLS=BTC,ETH cargo run --bin worker
+```
+
+### Environment Variables
+
+**Common Variables (all services):**
 - `PERPTRIX_ENV` - Environment: `sandbox` or `production` (default: `production`)
   - `sandbox` - Uses Hyperliquid testnet (wss://api.hyperliquid-testnet.xyz/ws)
   - `production` - Uses Hyperliquid mainnet (wss://api.hyperliquid.xyz/ws)
@@ -227,34 +441,20 @@ To access monitoring dashboards:
 - `OTEL_EXPORTER_OTLP_ENDPOINT` - OpenTelemetry OTLP endpoint for traces (default: `http://localhost:4318`)
 - `OTEL_SERVICE_NAME` - Service name for traces (default: `perptrix-signal-engine`)
 
-**Configuration File:**
-- Create a `config.json` file in the working directory to customize category weights and other settings (see `config.example.json` for a template)
-- The configuration file is automatically loaded when the server starts
+**WebSocket Service:**
+- `SYMBOLS` - Comma-separated list of symbols to subscribe to (optional, can be configured in workers)
 
-**Examples:**
+**API Server:**
+- `PORT` - HTTP server port (default: 8080)
 
-```bash
-# Custom port
-PORT=3000 cargo run --bin server
-
-# Enable periodic signal evaluation (production)
-EVAL_INTERVAL_SECONDS=60 SYMBOLS=BTC cargo run --bin server
-
-# Sandbox environment with custom historical candle count
-PERPTRIX_ENV=sandbox EVAL_INTERVAL_SECONDS=60 SYMBOLS=BTC HISTORICAL_CANDLE_COUNT=500 cargo run --bin server
-
-# Full configuration with multiple symbols
-PORT=8080 EVAL_INTERVAL_SECONDS=30 SYMBOLS=BTC,ETH PERPTRIX_ENV=production cargo run --bin server
-
-# Custom database connections
-QUESTDB_URL="host=localhost user=admin password=quest port=8812" \
-REDIS_URL="redis://127.0.0.1:6379" \
-cargo run --bin server
-```
+**Workers:**
+- `EVAL_INTERVAL_SECONDS` - Signal evaluation interval in seconds (required, must be > 0)
+- `SYMBOLS` - Comma-separated list of symbols to evaluate (required)
+- `WORKER_CONCURRENCY` - Number of concurrent jobs per worker (default: number of symbols)
 
 ### Health Check
 
-The HTTP server exposes a health check endpoint:
+The API server exposes a health check endpoint:
 
 ```bash
 curl http://localhost:8080/health
@@ -269,18 +469,19 @@ Response:
 }
 ```
 
-**Note:** The server automatically:
-1. Connects to QuestDB and Redis (with automatic reconnection if unavailable)
-2. Fetches historical candles from Hyperliquid REST API on startup
-3. Stores historical candles in QuestDB and caches them in Redis
-4. Subscribes to real-time candle updates via WebSocket
-5. Evaluates signals using cached/real-time data
+### How It Works
 
-If QuestDB or Redis are unavailable, the system will gracefully degrade and continue operating with in-memory buffers.
+1. **WebSocket Service** connects to the market data provider and receives real-time updates
+2. Updates are stored in **Redis** (cache) and **QuestDB** (persistent storage)
+3. **Workers** periodically enqueue `FetchCandlesJob` for each symbol (via cron scheduler)
+4. Jobs are processed in sequence: FetchCandles → EvaluateSignal → StoreSignal
+5. **API Server** provides endpoints to query signals, metrics, and health status
+
+All services communicate via Redis/QuestDB - there's no direct coupling between services.
 
 ### Metrics Endpoint
 
-The HTTP server exposes a Prometheus metrics endpoint:
+The API server exposes a Prometheus metrics endpoint:
 
 ```bash
 curl http://localhost:8080/metrics
@@ -290,6 +491,7 @@ This endpoint returns metrics in Prometheus text format, including:
 - **HTTP Metrics**: Request count, latency, in-flight requests
 - **Signal Metrics**: Evaluation count, duration, active evaluations, errors
 - **System Metrics**: Database, cache, and WebSocket connection status
+- **Job Queue Metrics**: Job processing rates, queue depth, worker status
 
 ### Observability
 
@@ -513,6 +715,15 @@ The signal engine uses integer scores to determine market bias, which maps to tr
 - QuestDB for persistent storage
 - Redis for fast caching
 - Docker Compose setup for local development
+
+### ✅ Phase 3.5 — Production Job Queue (Completed)
+- Apalis job queue system with Redis backend
+- Separated services: WebSocket service, API server, workers
+- Job workflow: FetchCandlesJob → EvaluateSignalJob → StoreSignalJob
+- Cron-based job scheduling
+- Automatic retries with exponential backoff
+- Horizontal scalability for API servers and workers
+- WebSocket service as singleton for data ingestion
 
 ### 🔜 Phase 3 — Remaining
 - Real-time funding rate and open interest updates

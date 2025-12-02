@@ -3,20 +3,33 @@ name = "perptrix"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "api-server"
+path = "src/bin/api-server.rs"
+
+[[bin]]
+name = "websocket-service"
+path = "src/bin/websocket-service.rs"
+
+[[bin]]
+name = "worker"
+path = "src/bin/worker.rs"
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
-axum = "0.7"
+axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
-futures-util = "0.3"
+futures-util = { version = "0.3", features = ["async-await"] }
 url = "2.4"
 async-trait = "0.1"
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
 redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
+backon = "1.5"
 reqwest = { version = "0.11", features = ["json"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "ansi"] }
@@ -27,9 +40,13 @@ opentelemetry_sdk = { version = "0.21", features = ["rt-tokio"] }
 opentelemetry-semantic-conventions = "0.13"
 tracing-opentelemetry = "0.22"
 dotenvy = "0.15"
+apalis = "0.7.4"
+apalis-redis = "0.7.4"
+apalis-cron = "0.7.4"
+cron = "0.12"
 
 [dev-dependencies]
 wiremock = "0.6"
-axum-test = "18.3"
+    axum-test = "18.3"
 tokio-test = "0.4"
 

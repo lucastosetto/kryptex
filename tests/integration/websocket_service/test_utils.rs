@@ -1,27 +1,21 @@
-use std::sync::Arc;
-use std::time::Instant;
+//! Test utilities for WebSocket service integration tests
 
-use axum_test::TestServer;
-use perptrix::core::http::{create_router, AppState, HealthStatus};
-use perptrix::metrics::Metrics;
 use perptrix::services::hyperliquid::{
     HyperliquidMarketDataProvider, HyperliquidRestClient, MockWebSocketClient,
 };
-use tokio::sync::RwLock;
+use perptrix::services::websocket::WebSocketService;
+use std::sync::Arc;
 use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-/// Helper structure bundling together the HTTP server and mocked dependencies.
-#[allow(dead_code)]
-pub struct TestApp {
-    pub server: TestServer,
-    pub metrics: Arc<Metrics>,
-    pub hyperliquid_rest: MockServer,
+/// Test helper for WebSocket service integration tests
+pub struct TestWebSocketService {
     pub websocket: Arc<MockWebSocketClient>,
-    pub provider: HyperliquidMarketDataProvider,
+    pub hyperliquid_rest: MockServer,
+    pub service: WebSocketService,
 }
 
-impl TestApp {
+impl TestWebSocketService {
     pub async fn new() -> Self {
         let mock_server = MockServer::start().await;
         mock_hyperliquid_candles(&mock_server).await;
@@ -39,23 +33,21 @@ impl TestApp {
             vec!["1m".to_string()],
         );
 
-        let metrics = Arc::new(Metrics::new().expect("metrics initialization"));
-        let state = AppState {
-            health: Arc::new(RwLock::new(HealthStatus::default())),
-            metrics: metrics.clone(),
-            start_time: Arc::new(Instant::now()),
-        };
-
-        let router = create_router(state);
-        let server = TestServer::new(router).expect("start test server");
+        let service = WebSocketService::new(provider);
 
         Self {
-            server,
-            metrics,
-            hyperliquid_rest: mock_server,
             websocket,
-            provider,
+            hyperliquid_rest: mock_server,
+            service,
         }
+    }
+
+    pub async fn start(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.service.start().await
+    }
+
+    pub fn get_provider(&self) -> Arc<HyperliquidMarketDataProvider> {
+        self.service.get_provider()
     }
 }
 

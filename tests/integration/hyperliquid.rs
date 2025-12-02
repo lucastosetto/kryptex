@@ -1,7 +1,6 @@
 //! Integration tests for the Hyperliquid-powered HTTP stack.
 mod test_utils;
 
-use perptrix::services::market_data::MarketDataProvider;
 use serde_json::Value;
 use tokio_tungstenite::tungstenite::Message;
 

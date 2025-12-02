@@ -1,13 +1,15 @@
-//! Periodic task runner for continuous signal evaluation
+//! Apalis worker setup for signal evaluation jobs
 
-use crate::metrics::Metrics;
-use crate::services::market_data::{MarketDataProvider, PlaceholderMarketDataProvider};
-use crate::signals::engine::SignalEngine;
+use crate::jobs::context::JobContext;
+use crate::jobs::handlers;
+use crate::jobs::types::{EvaluateSignalJob, FetchCandlesJob, StoreSignalJob};
+use apalis::prelude::*;
+use apalis_redis::RedisStorage;
 use std::sync::Arc;
-use std::time::Instant;
-use tokio::time::{interval, Duration};
-use tracing::{debug, error, info};
+use tracing::info;
 
+/// Configuration for the job runtime
+#[derive(Clone)]
 pub struct RuntimeConfig {
     pub evaluation_interval_seconds: u64,
     pub symbols: Vec<String>,
@@ -22,201 +24,101 @@ impl Default for RuntimeConfig {
     }
 }
 
+/// Signal runtime that sets up Apalis workers
 pub struct SignalRuntime {
-    config: RuntimeConfig,
-    data_provider: Arc<dyn MarketDataProvider + Send + Sync>,
-    database: Option<Arc<crate::db::QuestDatabase>>,
-    metrics: Option<Arc<Metrics>>,
+    _config: RuntimeConfig,
+    job_context: Arc<JobContext>,
+    fetch_storage: Arc<RedisStorage<FetchCandlesJob>>,
+    eval_storage: Arc<RedisStorage<EvaluateSignalJob>>,
+    store_storage: Arc<RedisStorage<StoreSignalJob>>,
+    concurrency: usize,
 }
 
 impl SignalRuntime {
-    pub fn new(config: RuntimeConfig) -> Self {
-        Self {
-            config,
-            data_provider: Arc::new(PlaceholderMarketDataProvider),
-            database: None,
-            metrics: None,
-        }
-    }
-
-    pub fn with_provider<P: MarketDataProvider + Send + Sync + 'static>(
+    /// Create a new runtime with job context and storage backends
+    pub fn new(
         config: RuntimeConfig,
-        provider: P,
+        job_context: Arc<JobContext>,
+        fetch_storage: Arc<RedisStorage<FetchCandlesJob>>,
+        eval_storage: Arc<RedisStorage<EvaluateSignalJob>>,
+        store_storage: Arc<RedisStorage<StoreSignalJob>>,
     ) -> Self {
+        let concurrency = config.symbols.len().max(1);
         Self {
-            config,
-            data_provider: Arc::new(provider),
-            database: None,
-            metrics: None,
+            _config: config,
+            job_context,
+            fetch_storage,
+            eval_storage,
+            store_storage,
+            concurrency,
         }
     }
 
-    pub fn with_database(mut self, database: Arc<crate::db::QuestDatabase>) -> Self {
-        self.database = Some(database);
+    /// Set custom concurrency (default is number of symbols)
+    pub fn with_concurrency(mut self, concurrency: usize) -> Self {
+        self.concurrency = concurrency;
         self
     }
 
-    pub fn with_metrics(mut self, metrics: Arc<Metrics>) -> Self {
-        self.metrics = Some(metrics);
-        self
-    }
-
-    pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut interval_timer =
-            interval(Duration::from_secs(self.config.evaluation_interval_seconds));
+    /// Start all workers and return handles for graceful shutdown
+    pub async fn start_workers(
+        &self,
+    ) -> Result<Vec<tokio::task::JoinHandle<()>>, Box<dyn std::error::Error + Send + Sync>> {
+        let mut handles = Vec::new();
 
         info!(
-            interval = self.config.evaluation_interval_seconds,
-            "Signal runtime started. Evaluating signals every {} seconds",
-            self.config.evaluation_interval_seconds
+            concurrency = self.concurrency,
+            "SignalRuntime: starting Apalis workers with concurrency {}",
+            self.concurrency
         );
 
-        loop {
-            interval_timer.tick().await;
+        // Worker for FetchCandlesJob
+        let fetch_storage = (*self.fetch_storage).clone();
+        let eval_storage = self.eval_storage.clone();
+        let job_context = self.job_context.clone();
+        let fetch_handle = tokio::spawn(async move {
+            let worker = WorkerBuilder::new("fetch-candles-worker")
+                .data(job_context.clone())
+                .data(eval_storage.clone())
+                .backend(fetch_storage)
+                .build_fn(handlers::handle_fetch_candles);
 
-            for symbol in &self.config.symbols {
-                match self.evaluate_signal(symbol).await {
-                    Ok(Some(signal)) => {
-                        // Log at different levels based on signal strength
-                        let confidence_pct = (signal.confidence * 10000.0).round() / 100.0;
-                        if signal.direction == crate::models::signal::SignalDirection::Neutral {
-                            debug!(
-                                symbol = %symbol,
-                                direction = ?signal.direction,
-                                confidence = confidence_pct,
-                                "Signal for {}: {:?} (confidence: {:.2}%)",
-                                symbol,
-                                signal.direction,
-                                confidence_pct
-                            );
-                        } else {
-                            info!(
-                                symbol = %symbol,
-                                direction = ?signal.direction,
-                                confidence = confidence_pct,
-                                "Signal for {}: {:?} (confidence: {:.2}%)",
-                                symbol,
-                                signal.direction,
-                                confidence_pct
-                            );
-                        }
+            info!("SignalRuntime: FetchCandlesJob worker started");
+            worker.run().await;
+        });
+        handles.push(fetch_handle);
 
-                        // Record successful evaluation
-                        if let Some(ref metrics) = self.metrics {
-                            metrics.signal_evaluations_total.inc();
-                        }
+        // Worker for EvaluateSignalJob
+        let eval_storage_worker = (*self.eval_storage).clone();
+        let store_storage = self.store_storage.clone();
+        let job_context_eval = self.job_context.clone();
+        let eval_handle = tokio::spawn(async move {
+            let worker = WorkerBuilder::new("evaluate-signal-worker")
+                .data(job_context_eval.clone())
+                .data(store_storage.clone())
+                .backend(eval_storage_worker)
+                .build_fn(handlers::handle_evaluate_signal);
 
-                        // Store signal in database if available
-                        if let Some(ref db) = self.database {
-                            if let Err(e) = db.store_signal(&signal).await {
-                                error!(symbol = %symbol, error = %e, "Failed to store signal in database");
-                            }
-                        }
-                    }
-                    Ok(None) => {
-                        debug!(symbol = %symbol, "No signal generated for {}", symbol);
-                        // Still count as evaluation (no signal is a valid result)
-                        if let Some(ref metrics) = self.metrics {
-                            metrics.signal_evaluations_total.inc();
-                        }
-                    }
-                    Err(e) => {
-                        error!(symbol = %symbol, error = %e, "Error evaluating signal for {}", symbol);
-                        // Record error
-                        if let Some(ref metrics) = self.metrics {
-                            metrics.signal_evaluation_errors_total.inc();
-                        }
-                    }
-                }
-            }
-        }
-    }
+            info!("SignalRuntime: EvaluateSignalJob worker started");
+            worker.run().await;
+        });
+        handles.push(eval_handle);
 
-    /// Evaluate signal for a symbol
-    async fn evaluate_signal(
-        &self,
-        symbol: &str,
-    ) -> Result<Option<crate::models::signal::SignalOutput>, Box<dyn std::error::Error + Send + Sync>>
-    {
-        let start = Instant::now();
+        // Worker for StoreSignalJob
+        let store_storage_worker = (*self.store_storage).clone();
+        let job_context_store = self.job_context.clone();
+        let store_handle = tokio::spawn(async move {
+            let worker = WorkerBuilder::new("store-signal-worker")
+                .data(job_context_store.clone())
+                .backend(store_storage_worker)
+                .build_fn(handlers::handle_store_signal);
 
-        // Track active evaluation
-        if let Some(ref metrics) = self.metrics {
-            metrics.signal_evaluations_active.inc();
-        }
+            info!("SignalRuntime: StoreSignalJob worker started");
+            worker.run().await;
+        });
+        handles.push(store_handle);
 
-        let result = self.evaluate_signal_internal(symbol).await;
-
-        // Record duration and decrement active
-        if let Some(ref metrics) = self.metrics {
-            let duration = start.elapsed();
-            metrics
-                .signal_evaluation_duration_seconds
-                .observe(duration.as_secs_f64());
-            metrics.signal_evaluations_active.dec();
-        }
-
-        result
-    }
-
-    async fn evaluate_signal_internal(
-        &self,
-        symbol: &str,
-    ) -> Result<Option<crate::models::signal::SignalOutput>, Box<dyn std::error::Error + Send + Sync>>
-    {
-        let candles = self
-            .data_provider
-            .get_candles(symbol, 250)
-            .await
-            .map_err(|e| {
-                Box::new(std::io::Error::other(format!("Market data error: {}", e)))
-                    as Box<dyn std::error::Error + Send + Sync>
-            })?;
-
-        if candles.is_empty() {
-            debug!(symbol = %symbol, "No candles available yet - waiting for WebSocket data");
-            return Ok(None);
-        }
-
-        debug!(
-            symbol = %symbol,
-            candle_count = candles.len(),
-            min_candles = crate::signals::engine::MIN_CANDLES,
-            "Evaluating with {} candles (need {})",
-            candles.len(),
-            crate::signals::engine::MIN_CANDLES
-        );
-
-        if candles.len() < crate::signals::engine::MIN_CANDLES {
-            debug!(
-                symbol = %symbol,
-                candle_count = candles.len(),
-                min_candles = crate::signals::engine::MIN_CANDLES,
-                "Not enough candles ({} < {}) - waiting for more candles to accumulate (1m candles arrive every minute)",
-                candles.len(),
-                crate::signals::engine::MIN_CANDLES
-            );
-            return Ok(None);
-        }
-
-        let signal = SignalEngine::evaluate(&candles, symbol);
-
-        if signal.is_none() {
-            debug!(symbol = %symbol, "Signal evaluation returned None (likely insufficient data or neutral score)");
-        } else if let Some(ref sig) = signal {
-            let confidence_pct = (sig.confidence * 10000.0).round() / 100.0;
-            info!(
-                symbol = %symbol,
-                direction = ?sig.direction,
-                confidence = confidence_pct,
-                reasons = ?sig.reasons,
-                "Signal generated - Direction: {:?}, Confidence: {:.2}%, Reasons: {:?}",
-                sig.direction,
-                confidence_pct,
-                sig.reasons
-            );
-        }
-
-        Ok(signal)
+        info!("SignalRuntime: all workers started");
+        Ok(handles)
     }
 }

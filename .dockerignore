@@ -1,0 +1,17 @@
+target/
+.git/
+.gitignore
+.env
+.env.*
+*.md
+docker-compose.yml
+Dockerfile
+.dockerignore
+tests/
+prometheus/
+grafana/
+tempo/
+
+
+
+

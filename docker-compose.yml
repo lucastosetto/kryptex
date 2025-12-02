@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   questdb:
     image: questdb/questdb:latest
@@ -13,11 +11,14 @@ services:
       - QDB_PG_USER=admin
       - QDB_PG_PASSWORD=quest
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9000/ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "wget --spider --quiet http://localhost:9000 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
     restart: unless-stopped
+    networks:
+      - perptrix-network
 
   redis:
     image: redis:7-alpine
@@ -33,6 +34,8 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - perptrix-network
 
   prometheus:
     image: prom/prometheus:latest
@@ -53,6 +56,8 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - perptrix-network
 
   grafana:
     image: grafana/grafana:latest
@@ -75,6 +80,8 @@ services:
       - prometheus
       - tempo
     restart: unless-stopped
+    networks:
+      - perptrix-network
 
   tempo:
     image: grafana/tempo:latest
@@ -95,6 +102,89 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - perptrix-network
+
+  # Perptrix Services
+  websocket-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BINARY: websocket-service
+    container_name: perptrix-websocket
+    command: ["./websocket-service"]
+    environment:
+      - PERPTRIX_ENV=${PERPTRIX_ENV:-production}
+      - SYMBOLS=${SYMBOLS:-BTC,ETH}
+      - QUESTDB_URL=host=questdb user=admin password=quest port=8812
+      - REDIS_URL=redis://redis:6379/
+      - HISTORICAL_CANDLE_COUNT=${HISTORICAL_CANDLE_COUNT:-200}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318
+      - OTEL_SERVICE_NAME=perptrix-websocket-service
+    depends_on:
+      questdb:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - perptrix-network
+
+  api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BINARY: api-server
+    container_name: perptrix-api
+    command: ["./api-server"]
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      - PORT=8080
+      - PERPTRIX_ENV=${PERPTRIX_ENV:-production}
+      - QUESTDB_URL=host=questdb user=admin password=quest port=8812
+      - REDIS_URL=redis://redis:6379/
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318
+      - OTEL_SERVICE_NAME=perptrix-api-server
+    depends_on:
+      - questdb
+      - redis
+      - tempo
+    restart: unless-stopped
+    networks:
+      - perptrix-network
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BINARY: worker
+    container_name: perptrix-worker
+    command: ["./worker"]
+    environment:
+      - EVAL_INTERVAL_SECONDS=${EVAL_INTERVAL_SECONDS:-60}
+      - SYMBOLS=${SYMBOLS:-BTC,ETH}
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-2}
+      - PERPTRIX_ENV=${PERPTRIX_ENV:-production}
+      - QUESTDB_URL=host=questdb user=admin password=quest port=8812
+      - REDIS_URL=redis://redis:6379/
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318
+      - OTEL_SERVICE_NAME=perptrix-worker
+    depends_on:
+      questdb:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      websocket-service:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - perptrix-network
+    # Note: To run multiple workers, start additional containers:
+    # docker-compose up -d --scale worker=3
 
 volumes:
   questdb_data:
@@ -102,4 +192,8 @@ volumes:
   prometheus_data:
   grafana_data:
   tempo_data:
+
+networks:
+  perptrix-network:
+    driver: bridge
 

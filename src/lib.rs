@@ -6,6 +6,7 @@ pub mod db;
 pub mod engine;
 pub mod evaluation;
 pub mod indicators;
+pub mod jobs;
 pub mod logging;
 pub mod metrics;
 pub mod models;

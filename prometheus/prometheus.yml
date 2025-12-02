@@ -12,10 +12,10 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  # Scrape Perptrix signal engine
-  - job_name: 'perptrix'
+  # Scrape Perptrix API server
+  - job_name: 'perptrix-api'
     static_configs:
-      - targets: ['host.docker.internal:8080']
+      - targets: ['api-server:8080']
     metrics_path: '/metrics'
     scrape_interval: 10s
     scrape_timeout: 5s
